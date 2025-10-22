@@ -1,7 +1,13 @@
 const express = require('express');
 const cors = require('cors');
-const app = express();
 const mongoose = require('mongoose'); // Correct import
+const dotenv = require('dotenv');
+
+// Load environment variables first
+const path = require('path');
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+const app = express();
 
 // CORS middleware
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [
@@ -16,15 +22,13 @@ app.use(cors({
 }));
 
 app.use(express.json());
-const dotenv = require('dotenv');
-dotenv.config();
 
 const connectdb = async () => {
     try {
-        if (!process.env.MONGODB_URI) {
-            throw new Error('MONGODB_URI is not set in your environment variables. Please add it to your .env file.');
+        if (!process.env.MONGO_URI) {
+            throw new Error('MONGO_URI is not set in your environment variables. Please add it to your .env file.');
         }
-        await mongoose.connect(process.env.MONGODB_URI);
+        await mongoose.connect(process.env.MONGO_URI);
         console.log('MongoDB connected');
     } catch (error) {
         console.log(error);

@@ -141,7 +141,7 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 // Initialize Google OAuth client
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || '864948749872-dh9vc6atlj2psgd53oiqg99kqgdbusfe.apps.googleusercontent.com');
+const googleClient = new OAuth2Client();
 
 // Get all users (admin only)
 const getAllUsers = async (req, res) => {
@@ -734,7 +734,7 @@ const verifyEmail = async (req, res) => {
             }
         }
 
-        // Generate JWT token for automatic login
+        // Generate JWT token for automatic login after verification
         const jwtToken = jwt.sign(
             { id: user._id },
             process.env.JWT_SECRET,
@@ -852,7 +852,7 @@ const forgotPassword = async (req, res) => {
         );
 
         // Construct reset link (adjust frontend URL as needed)
-        const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
+        const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
 
                 // Send email
         const msg = {
@@ -1129,15 +1129,38 @@ const googleSignIn = async (req, res) => {
     try {
         const { credential, role } = req.body;
 
+        console.log('Google Sign-in request received:', {
+            hasCredential: !!credential,
+            credentialLength: credential ? credential.length : 0,
+            role: role,
+            clientId: process.env.GOOGLE_CLIENT_ID || '864948749872-dh9vc6atlj2psgd53oiqg99kqgdbusfe.apps.googleusercontent.com',
+            credentialStart: credential ? credential.substring(0, 50) : 'none'
+        });
+
         if (!credential) {
             return res.status(400).json({ message: 'Google credential is required' });
         }
 
         // Verify the Google token
-        const ticket = await googleClient.verifyIdToken({
-            idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID || '864948749872-dh9vc6atlj2psgd53oiqg99kqgdbusfe.apps.googleusercontent.com',
-        });
+        console.log('Verifying Google token...');
+        console.log('Google Client ID:', process.env.GOOGLE_CLIENT_ID || '864948749872-dh9vc6atlj2psgd53oiqg99kqgdbusfe.apps.googleusercontent.com');
+        
+        let ticket;
+        try {
+            ticket = await googleClient.verifyIdToken({
+                idToken: credential,
+                audience: process.env.GOOGLE_CLIENT_ID || '864948749872-dh9vc6atlj2psgd53oiqg99kqgdbusfe.apps.googleusercontent.com',
+            });
+            console.log('Google token verified successfully');
+        } catch (verifyError) {
+            console.error('Google token verification failed:', verifyError);
+            console.error('Full Google verification error details:', {
+                message: verifyError.message,
+                code: verifyError.code,
+                stack: verifyError.stack
+            });
+            throw verifyError;
+        }
 
         const payload = ticket.getPayload();
         const { email, name, picture, sub: googleId } = payload;
@@ -1169,12 +1192,21 @@ const googleSignIn = async (req, res) => {
                 await user.save();
             }
             
-            // If role is provided and different from current role, update it
-            // This handles cases where user signs up with different role via Google
+            // SECURITY FIX: Prevent role switching via Google signup
+            // If user already exists with a different role, reject the signup
             if (role !== undefined && user.role !== role) {
-                console.log(`Updating user role from ${user.role} to ${role} for ${user.email}`);
-                user.role = role;
-                await user.save();
+                const roleNames = { 1: 'Room Seeker', 2: 'Admin', 3: 'Property Owner' };
+                const currentRoleName = roleNames[user.role] || 'Unknown';
+                const requestedRoleName = roleNames[role] || 'Unknown';
+                
+                console.log(`SECURITY ALERT: User ${user.email} attempted to change role from ${currentRoleName} to ${requestedRoleName} via Google signup`);
+                
+                return res.status(400).json({ 
+                    message: `This email is already registered as a ${currentRoleName}. You cannot change your account type using Google signup. Please use the regular login instead.`,
+                    errorCode: 'ROLE_CONFLICT',
+                    currentRole: user.role,
+                    requestedRole: role
+                });
             }
         }
 
@@ -1225,8 +1257,40 @@ const googleSignIn = async (req, res) => {
 
     } catch (error) {
         console.error('Google sign-in error:', error);
-        res.status(500).json({ message: 'Server error during Google sign-in' });
-  }
+        
+        // More specific error handling
+        if (error.message && error.message.includes('Wrong number of segments')) {
+            return res.status(400).json({ message: 'Invalid Google token format' });
+        }
+        
+        if (error.message && error.message.includes('Token used too late')) {
+            return res.status(400).json({ message: 'Google token has expired' });
+        }
+        
+        if (error.message && error.message.includes('Invalid token signature')) {
+            return res.status(400).json({ message: 'Invalid Google token signature' });
+        }
+        
+        if (error.message && error.message.includes('Audience mismatch')) {
+            return res.status(400).json({ message: 'Google token audience mismatch' });
+        }
+        
+        if (error.message && error.message.includes('No pem found for envelope')) {
+            return res.status(400).json({ message: 'Google token verification failed - invalid token format' });
+        }
+        
+        // Log the full error for debugging
+        console.error('Full Google sign-in error details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+        
+        res.status(500).json({ 
+            message: 'Server error during Google sign-in',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
 };
 
 // Upload profile picture
