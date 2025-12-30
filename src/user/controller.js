@@ -18,6 +18,11 @@ const authWithFirebase = async (req, res) => {
         const { uid, email, name, picture, email_verified } = req.firebaseUser;
         const { role } = req.body; // Optional role passed from frontend for new users
 
+        console.log('[DEBUG] authWithFirebase called');
+        console.log('[DEBUG] req.body:', req.body);
+        console.log('[DEBUG] req.firebaseUser:', req.firebaseUser);
+
+
         if (!email) {
             return res.status(400).json({ message: 'Firebase user must have an email.' });
         }
@@ -29,7 +34,7 @@ const authWithFirebase = async (req, res) => {
             console.log(`Creating new user from Firebase: ${email}`);
 
             user = new User({
-                name: name || email.split('@')[0],
+                name: req.body.name || name || email.split('@')[0],
                 email: email,
                 role: role || 1, // Default to Seeker
                 googleId: uid, // Use firebase UID as googleId for consistency
