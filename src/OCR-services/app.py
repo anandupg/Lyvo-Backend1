@@ -374,7 +374,8 @@ if __name__ == '__main__':
     # Use OCR_PORT if available, otherwise default to 5003
     # Avoid using generic 'PORT' as it may conflict with the main Node.js server
     # Force port 5003 to avoid conflict with main server on 5000
-    port = 5003
+    # Use generic PORT for Render/Heroku compatibility
+    port = int(os.getenv('PORT', 5003))
     debug = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     
     logger.info(f"Starting OCR Service on port {port}")
