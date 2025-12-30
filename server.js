@@ -15,9 +15,27 @@ connectDB();
 
 // Middleware
 app.use(cors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'https://lyvoplatform.vercel.app',
+            // Add any other domains here
+        ];
+
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.CORS_ORIGIN?.split(',').includes(origin)) {
+            callback(null, true);
+        } else {
+            console.log('CORS blocked origin:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(helmet());
 app.use(express.json({ limit: '50mb' }));
@@ -26,8 +44,13 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Initialize Socket.io (Global)
 const io = new Server(server, {
     cors: {
-        origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
-        methods: ["GET", "POST"]
+        origin: [
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'https://lyvoplatform.vercel.app'
+        ],
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 global.io = io; // Make io accessible globally if needed, or pass it to routes
