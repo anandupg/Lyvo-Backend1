@@ -63,16 +63,34 @@ io.use(socketAuthMiddleware);
 // Initialize Socket Modules
 initChatSocket(io);
 
+// Start Python OCR Service (for Single Service Deployment)
+const { spawn } = require('child_process');
+const path = require('path');
+
+try {
+    const pythonScriptPath = path.join(__dirname, 'src', 'OCR-services', 'app.py');
+    const pythonProcess = spawn('python', [pythonScriptPath], {
+        stdio: 'inherit' // Pipe output
+    });
+
+    pythonProcess.on('error', (err) => {
+        console.error('❌ Failed to start Python OCR service:', err);
+    });
+
+    console.log('✅ Python OCR Service started via spawn');
+} catch (error) {
+    console.error('⚠️ Error spawning Python process:', error);
+}
+
+// Output:
+// ...
 // Root endpoint
 app.get('/', (req, res) => {
-    res.json({
-        message: 'Lyvo Unified Backend Running',
-        services: ['User', 'Chat', 'Property', 'OCR']
-    });
+    res.send("Lyvo Backend is running 🚀");
 });
 
 // Port
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`✅ Server running on port ${PORT}`);
 });

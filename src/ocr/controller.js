@@ -4,7 +4,7 @@ const FormData = require('form-data');
 const getOcrServiceUrl = () => {
     // In production (Render), this env var should be set.
     // Locally, it defaults to localhost:5003
-    return process.env.OCR_SERVICE_URL || 'http://localhost:5003';
+    return process.env.OCR_SERVICE_URL || 'http://localhost:5001';
 };
 
 const extractText = async (req, res) => {
