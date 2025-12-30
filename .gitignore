@@ -1,4 +1,9 @@
 user-service/.env
 
 node_modules
-node_modules
+# Secrets
+*.env
+.env.*
+!.env.example
+src/config/firebaseServiceAccount.json
+config/*.json

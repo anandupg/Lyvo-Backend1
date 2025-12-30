@@ -46,7 +46,7 @@ A real-time chat microservice for the Lyvo room booking platform that enables co
    NODE_ENV=development
 
    # MongoDB Atlas Configuration
-   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/lyvo_chat?retryWrites=true&w=majority
+   MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/lyvo_chat?retryWrites=true&w=majority
 
    # JWT Configuration (use same secret as main backend)
    JWT_SECRET=your-super-secret-jwt-key-here
@@ -441,7 +441,7 @@ All errors are handled gracefully with appropriate HTTP status codes and meaning
 ```env
 NODE_ENV=production
 PORT=5002
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/lyvo_chat
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/lyvo_chat
 JWT_SECRET=your-production-jwt-secret
 INTERNAL_API_KEY=your-production-api-key
 CORS_ORIGIN=https://yourdomain.com
