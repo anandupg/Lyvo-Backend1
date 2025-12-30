@@ -1781,16 +1781,36 @@ const markUserCheckIn = async (req, res) => {
 
 // Get tenants for a room (public visibility of who lives there? or restricted?)
 // Original code had this, maybe for "roommates" feature?
+// Get tenants for a room (public visibility of who lives there? or restricted?)
+// Original code had this, maybe for "roommates" feature?
 const getRoomTenants = async (req, res) => {
     try {
         const { roomId } = req.params;
         // Logic to show public profile of current tenants?
         // Returning minimal info
-        const tenants = await Tenant.find({ roomId, status: 'active' })
+        const tenants = await Tenant.find({
+            roomId,
+            status: 'active',
+            isDeleted: { $ne: true }
+        })
             .populate('userId', 'profilePicture')
             .select('userId userName userEmail userPhone actualCheckInDate status profilePicture');
-        res.json({ success: true, tenants });
+
+        // Deduplicate by userId to handle potential data inconsistencies
+        const uniqueTenants = [];
+        const userIds = new Set();
+
+        tenants.forEach(tenant => {
+            const uid = tenant.userId?._id?.toString() || tenant.userId?.toString();
+            if (uid && !userIds.has(uid)) {
+                userIds.add(uid);
+                uniqueTenants.push(tenant);
+            }
+        });
+
+        res.json({ success: true, tenants: uniqueTenants });
     } catch (error) {
+        console.error('Get room tenants error:', error);
         res.status(500).json({ error: error.message });
     }
 };
