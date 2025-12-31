@@ -97,6 +97,13 @@ const authWithFirebase = async (req, res) => {
             role: user.role,
             isVerified: user.isVerified,
             profilePicture: user.profilePicture,
+            // Profile fields for completion check
+            phone: user.phone,
+            location: user.location,
+            age: user.age,
+            gender: user.gender,
+            occupation: user.occupation,
+            bio: user.bio,
             isNewUser: user.isNewUser,
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
             isTenant: !!activeTenant, // Flag for frontend redirection
@@ -630,6 +637,8 @@ const loginUser = async (req, res) => {
             location: user.location,
             bio: user.bio,
             occupation: user.occupation,
+            age: user.age,
+            gender: user.gender,
             // ... other fields
             isNewUser: user.isNewUser,
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
