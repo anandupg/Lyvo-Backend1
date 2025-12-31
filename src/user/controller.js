@@ -4,6 +4,7 @@ const { JsonWebTokenError } = require('jsonwebtoken');
 const UserModel = require('./model');
 const User = UserModel; // retain existing references
 const { BehaviourAnswers, KycDocument, AadharDetails } = require('./model');
+const Tenant = require('../property/models/Tenant'); // Import Tenant model for redirection logic
 const firebaseAuthMiddleware = require('../middleware/firebaseAuth'); // Not used directly here but good to reference
 const admin = require('../config/firebase-admin'); // Firebase Admin SDK
 const NotificationService = require('../property/services/notificationService');
@@ -82,6 +83,12 @@ const authWithFirebase = async (req, res) => {
             { expiresIn: '7d' }
         );
 
+        // Check for active tenancy
+        const activeTenant = await Tenant.findOne({
+            userId: user._id,
+            status: 'active'
+        });
+
         // Prepare response compatible with loginUser/googleSignIn
         const userResponse = {
             _id: user._id,
@@ -92,6 +99,7 @@ const authWithFirebase = async (req, res) => {
             profilePicture: user.profilePicture,
             isNewUser: user.isNewUser,
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
+            isTenant: !!activeTenant, // Flag for frontend redirection
             // Add other fields as needed
         };
 
@@ -628,6 +636,14 @@ const loginUser = async (req, res) => {
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         };
+
+        // Check for active tenancy
+        const activeTenant = await Tenant.findOne({
+            userId: user._id,
+            status: 'active'
+        });
+
+        userResponse.isTenant = !!activeTenant; // Flag for frontend redirection
 
         res.status(200).json({ message: 'logged in', user: userResponse, token });
     } catch (error) {
