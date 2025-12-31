@@ -784,11 +784,19 @@ const googleSignIn = async (req, res) => {
         const { credential, role } = req.body;
         if (!credential) return res.status(400).json({ message: 'Google credential is required' });
 
-        // Verify Google token
-        const ticket = await googleClient.verifyIdToken({
+        // Verify Google token with timeout
+        console.log('[DEBUG] Verifying ID Token with Google...');
+        const verifyPromise = googleClient.verifyIdToken({
             idToken: credential,
             audience: process.env.GOOGLE_CLIENT_ID
         });
+
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Google API Verification Timed Out')), 5000)
+        );
+
+        const ticket = await Promise.race([verifyPromise, timeoutPromise]);
+        console.log('[DEBUG] ID Token Verified Successfully');
         const payload = ticket.getPayload();
         const { email, name, picture, sub: googleId } = payload;
 
