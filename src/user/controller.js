@@ -86,8 +86,11 @@ const authWithFirebase = async (req, res) => {
         // Check for active tenancy
         const activeTenant = await Tenant.findOne({
             userId: user._id,
-            status: 'active'
+            status: 'active',
+            isDeleted: { $ne: true }
         });
+
+        console.log(`authWithFirebase: Tenant check for user ${user._id}: ${!!activeTenant}`);
 
         // Prepare response compatible with loginUser/googleSignIn
         const userResponse = {
@@ -649,8 +652,11 @@ const loginUser = async (req, res) => {
         // Check for active tenancy
         const activeTenant = await Tenant.findOne({
             userId: user._id,
-            status: 'active'
+            status: 'active',
+            isDeleted: { $ne: true }
         });
+
+        console.log(`loginUser: Tenant check for user ${user._id}: ${!!activeTenant}`);
 
         userResponse.isTenant = !!activeTenant; // Flag for frontend redirection
 

@@ -322,13 +322,20 @@ const getProperties = async (req, res) => {
         console.log(`Get Properties: Fetching for owner_id: ${ownerIdStr} (Original: ${userId})`);
 
         const properties = await Property.find({ owner_id: ownerIdStr })
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
-        console.log(`Get Properties: Found ${properties.length} properties for user ${ownerIdStr}`);
+        // Populate rooms for each property
+        const propertiesWithRooms = await Promise.all(properties.map(async (property) => {
+            const rooms = await Room.find({ property_id: property._id, status: { $ne: 'inactive' } });
+            return { ...property, rooms };
+        }));
+
+        console.log(`Get Properties: Found ${propertiesWithRooms.length} properties for user ${ownerIdStr}`);
 
         res.json({
             success: true,
-            data: properties
+            data: propertiesWithRooms
         });
 
     } catch (error) {
