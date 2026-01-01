@@ -1523,7 +1523,7 @@ const getOwnerTenants = async (req, res) => {
         if (status) query.status = status;
 
         const tenants = await Tenant.find(query)
-            .populate('userId', 'name email profilePicture')
+            .populate('userId', 'name email phone profilePicture')
             .sort({ createdAt: -1 });
 
         // Map to ensure profile info is available at top level for frontend
@@ -1533,6 +1533,7 @@ const getOwnerTenants = async (req, res) => {
                 tObj.profilePicture = t.userId.profilePicture;
                 tObj.userName = t.userId.name || tObj.userName;
                 tObj.userEmail = t.userId.email || tObj.userEmail;
+                tObj.userPhone = t.userId.phone || tObj.userPhone;
             }
             return tObj;
         });
