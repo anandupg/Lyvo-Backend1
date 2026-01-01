@@ -1515,8 +1515,22 @@ const getOwnerTenants = async (req, res) => {
         const query = { ownerId: String(ownerId), isDeleted: { $ne: true } };
         if (status) query.status = status;
 
-        const tenants = await Tenant.find(query).sort({ createdAt: -1 });
-        res.json({ success: true, tenants });
+        const tenants = await Tenant.find(query)
+            .populate('userId', 'name email profilePicture')
+            .sort({ createdAt: -1 });
+
+        // Map to ensure profile info is available at top level for frontend
+        const enrichedTenants = tenants.map(t => {
+            const tObj = t.toObject();
+            if (t.userId) {
+                tObj.profilePicture = t.userId.profilePicture;
+                tObj.userName = t.userId.name || tObj.userName;
+                tObj.userEmail = t.userId.email || tObj.userEmail;
+            }
+            return tObj;
+        });
+
+        res.json({ success: true, tenants: enrichedTenants });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1541,14 +1555,42 @@ const getTenantDetails = async (req, res) => {
         const { tenantId } = req.params;
         const userId = req.user?.id;
 
-        const tenant = await Tenant.findById(tenantId);
+        const tenant = await Tenant.findById(tenantId).populate('userId', 'profilePicture name email phone');
         if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
-        // Auth check
-        if (tenant.userId.toString() !== userId && tenant.ownerId.toString() !== userId) {
+        // Auth check - handle both string and populated object cases
+        const tUserId = tenant.userId._id ? tenant.userId._id.toString() : tenant.userId.toString();
+        const tOwnerId = tenant.ownerId.toString();
+
+        if (tUserId !== userId && tOwnerId !== userId) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
-        res.json({ success: true, tenant });
+
+        // Fetch KYC Details (Aadhar)
+        let kycData = null;
+        try {
+            const AadharDetails = mongoose.model('AadharDetails');
+            const aadharDetails = await AadharDetails.findOne({ userId: tUserId });
+            if (aadharDetails) {
+                kycData = {
+                    status: aadharDetails.approvalStatus,
+                    aadhar: aadharDetails
+                };
+            }
+        } catch (kycError) {
+            console.error('Error fetching KYC details:', kycError);
+        }
+
+        const tenantObj = tenant.toObject();
+        tenantObj.kyc = kycData;
+
+        // Ensure profile picture is from the latest user data if populated
+        if (tenant.userId && tenant.userId.profilePicture) {
+            tenantObj.profilePicture = tenant.userId.profilePicture;
+            tenantObj.userName = tenant.userId.name || tenantObj.userName; // Also update name if needed
+        }
+
+        res.json({ success: true, tenant: tenantObj });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
