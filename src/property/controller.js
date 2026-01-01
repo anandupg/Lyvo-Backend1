@@ -795,7 +795,7 @@ const getApprovedPropertyPublic = async (req, res) => {
 
         // Get Owner details
         const User = require('../user/model');
-        const owner = await User.findById(property.owner_id).select('name picture created_at');
+        const owner = await User.findById(property.owner_id).select('name picture phone created_at');
 
         res.json({
             success: true,
@@ -1562,7 +1562,10 @@ const getTenantDetails = async (req, res) => {
         const { tenantId } = req.params;
         const userId = req.user?.id;
 
-        const tenant = await Tenant.findById(tenantId).populate('userId', 'profilePicture name email phone');
+        const tenant = await Tenant.findById(tenantId)
+            .populate('userId', 'profilePicture name email phone')
+            .populate('propertyId')
+            .populate('roomId');
         if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
         // Auth check - handle both string and populated object cases
