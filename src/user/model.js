@@ -108,6 +108,7 @@ const userSchema = new mongoose.Schema({
     // Behaviour onboarding flags
     isNewUser: { type: Boolean, default: true },
     hasCompletedBehaviorQuestions: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

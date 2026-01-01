@@ -76,6 +76,13 @@ const authWithFirebase = async (req, res) => {
             await user.save();
         }
 
+        // Check if user is active
+        if (user.isActive === false) {
+            return res.status(403).json({
+                message: 'Your account has been deactivated. Please contact support for assistance.'
+            });
+        }
+
         // Generate Internal JWT (Compatible with legacy system)
         const token = jwt.sign(
             { id: user._id, role: user.role, email: user.email, name: user.name },
@@ -612,6 +619,13 @@ const loginUser = async (req, res) => {
             });
         }
 
+        // Check if user is active
+        if (user.isActive === false) {
+            return res.status(403).json({
+                message: 'Your account has been deactivated. Please contact support for assistance.'
+            });
+        }
+
         // Compare password
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
@@ -848,6 +862,13 @@ const googleSignIn = async (req, res) => {
             if (role !== undefined && user.role !== role) {
                 return res.status(400).json({ message: 'Role conflict', errorCode: 'ROLE_CONFLICT' });
             }
+        }
+
+        // Check if user is active
+        if (user.isActive === false) {
+            return res.status(403).json({
+                message: 'Your account has been deactivated. Please contact support for assistance.'
+            });
         }
 
         const token = jwt.sign(
@@ -1281,10 +1302,18 @@ module.exports = {
             const { userId } = req.params;
             const user = await User.findById(userId);
             if (!user) return res.status(404).json({ message: 'User not found' });
-            user.isActive = !user.isActive;
+
+            // Explicitly determine current status; if undefined, treat as true
+            const currentStatus = user.isActive !== false;
+            user.isActive = !currentStatus;
+
             await user.save();
-            res.json({ message: `User ${user.isActive ? 'activated' : 'deactivated'}`, user });
+            res.json({
+                message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
+                user
+            });
         } catch (e) {
+            console.error('Toggle status error:', e);
             res.status(500).json({ message: 'Server error' });
         }
     },
