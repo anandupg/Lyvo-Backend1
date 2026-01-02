@@ -1,0 +1,20 @@
+{
+  "ownerId": "6944ebfaccd01fda432f0dad",
+  "count": 2,
+  "notifications": [
+    {
+      "id": "6956e153854f2888fc86b6b0",
+      "title": "📨 Message from Admin",
+      "message": "fvdv",
+      "createdAt": "2026-01-01T21:04:19.030Z",
+      "type": "general"
+    },
+    {
+      "id": "6956e150854f2888fc86b6a7",
+      "title": "📨 Message from Admin",
+      "message": "fdvfd",
+      "createdAt": "2026-01-01T21:04:16.922Z",
+      "type": "general"
+    }
+  ]
+}

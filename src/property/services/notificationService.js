@@ -33,8 +33,15 @@ class NotificationService {
       console.log('Message:', message);
       console.log('Type:', type);
 
+      // Ensure recipient_id is string
+      const recipientIdStr = recipient_id ? recipient_id.toString() : null;
+      if (!recipientIdStr) {
+        console.error('createNotification: Missing recipient_id');
+        return null;
+      }
+
       const notification = new Notification({
-        recipient_id,
+        recipient_id: recipientIdStr,
         recipient_type,
         title,
         message,
@@ -46,24 +53,23 @@ class NotificationService {
         created_by,
         metadata
       });
-
-      console.log('Notification object created:', notification);
       await notification.save();
-      console.log(`✅ Notification created for user ${recipient_id}: ${title}`);
-      console.log('Saved notification:', notification);
 
-      // Emit socket event if io is available logically
+      console.log('✅ Notification saved to DB:', notification._id);
+
+      // Emit via socket if available
       if (global.io) {
-        // Emit to user_userId room
-        global.io.to(`user_${recipient_id}`).emit('new_notification', notification);
+        const roomName = `user_${recipientIdStr}`;
+        console.log(`🔌 Emitting new_notification to room: ${roomName}`);
+        global.io.to(roomName).emit('new_notification', notification);
+      } else {
+        console.warn('⚠️ global.io not found, socket event not emitted');
       }
 
       return notification;
     } catch (error) {
-      console.error('❌ Error creating notification:', error);
-      console.error('Error details:', error.message);
-      console.error('Error stack:', error.stack);
-      throw error;
+      console.error('createNotification error:', error);
+      return null;
     }
   }
 
@@ -458,21 +464,31 @@ class NotificationService {
    * Send custom message from admin to owner
    */
   static async sendAdminMessageToOwner(ownerId, propertyId, propertyName, message, adminId) {
-    return await this.createNotification({
-      recipient_id: ownerId,
-      recipient_type: 'owner',
-      title: '📨 Message from Admin',
-      message: message,
-      type: 'general',
-      related_property_id: propertyId,
-      action_url: `/owner-properties/${propertyId}`,
-      created_by: adminId,
-      metadata: {
-        property_name: propertyName,
-        property_id: propertyId,
-        message_type: 'admin_custom_message'
-      }
-    });
+    try {
+      const ownerIdStr = ownerId ? ownerId.toString() : null;
+      if (!ownerIdStr) throw new Error('Owner ID is required');
+
+      console.log('🚀 Sending ADMIN MESSAGE to Owner:', ownerIdStr);
+      console.log('📝 Message Content:', message);
+
+      return await this.createNotification({
+        recipient_id: ownerIdStr,
+        recipient_type: 'owner',
+        title: `📨 Message from Admin`,
+        message: `Regarding "${propertyName}": ${message}`,
+        type: 'general',
+        related_property_id: propertyId,
+        action_url: `/owner-property/${propertyId}`,
+        created_by: adminId ? adminId.toString() : 'system',
+        metadata: {
+          admin_message: message,
+          property_name: propertyName,
+          admin_custom_message: true
+        }
+      });
+    } catch (error) {
+      console.error('sendAdminMessageToOwner error:', error);
+    }
   }
   /**
    * Notify all admins

@@ -365,35 +365,42 @@ const getAllPropertiesAdmin = async (req, res) => {
         const properties = await Property.find(query).sort({ created_at: -1 });
         console.log(`Found ${properties.length} properties for admin`);
 
-        // Enrich with owner details using direct DB access
-        const ownerIds = [...new Set(properties.map(p => p.owner_id))];
-        const User = require('../user/model');
+        // Enrich with owner details
+        // Filter out invalid or null owner IDs to prevent CastError
+        const ownerIds = [...new Set(properties
+            .map(p => p.owner_id)
+            .filter(id => id && mongoose.Types.ObjectId.isValid(id))
+        )];
+
         const owners = await User.find({ _id: { $in: ownerIds } }).select('name email phone phoneNumber');
 
         const userMap = {};
         owners.forEach(owner => {
-            userMap[owner._id.toString()] = owner;
+            if (owner && owner._id) {
+                userMap[owner._id.toString()] = owner;
+            }
         });
 
         // Enrich with Rooms
-        const Room = require('./models/Room');
         const propertyIds = properties.map(p => p._id);
         const allRooms = await Room.find({ property_id: { $in: propertyIds } });
 
         const roomMap = {};
         allRooms.forEach(room => {
-            const pId = room.property_id.toString();
-            if (!roomMap[pId]) roomMap[pId] = [];
-            roomMap[pId].push(room);
+            if (room && room.property_id) {
+                const pId = room.property_id.toString();
+                if (!roomMap[pId]) roomMap[pId] = [];
+                roomMap[pId].push(room);
+            }
         });
 
         const enrichedProperties = properties.map(p => {
-            const owner = userMap[p.owner_id] || {};
+            const owner = userMap[p.owner_id?.toString()] || {};
             const rooms = roomMap[p._id.toString()] || [];
 
             return {
                 ...p.toObject(),
-                rooms: rooms, // Attach rooms
+                rooms: rooms,
                 owner: {
                     name: owner.name || 'Unknown',
                     email: owner.email || '',
@@ -407,8 +414,12 @@ const getAllPropertiesAdmin = async (req, res) => {
             data: enrichedProperties
         });
     } catch (error) {
-        console.error('Admin get properties error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        console.error('Admin get properties error details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -417,7 +428,11 @@ const approvePropertyAdmin = async (req, res) => {
     try {
         const { id } = req.params;
         const { status, reason } = req.body; // status: 'approved' or 'rejected'
-        const adminId = req.user?.id;
+        const adminId = req.user?.id || req.headers['x-user-id'];
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid property ID' });
+        }
 
         if (!['approved', 'rejected'].includes(status)) {
             return res.status(400).json({ success: false, message: 'Invalid status' });
@@ -441,13 +456,15 @@ const approvePropertyAdmin = async (req, res) => {
         await property.save();
 
         // Send notifications
-        if (status === 'approved') {
-            await NotificationService.notifyPropertyApproval(property, adminId);
-        } else {
-            await NotificationService.notifyPropertyRejection(property, adminId, reason);
+        try {
+            if (status === 'approved') {
+                await NotificationService.notifyPropertyApproval(property, adminId);
+            } else {
+                await NotificationService.notifyPropertyRejection(property, adminId, reason);
+            }
+        } catch (notifError) {
+            console.error('Notification error (non-fatal):', notifError);
         }
-
-        // Also auto-approve rooms if property is approved? Maybe not.
 
         res.json({
             success: true,
@@ -457,7 +474,11 @@ const approvePropertyAdmin = async (req, res) => {
 
     } catch (error) {
         console.error('Approve property error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -466,7 +487,11 @@ const approveRoomAdmin = async (req, res) => {
     try {
         const { roomId } = req.params;
         const { status, reason } = req.body;
-        const adminId = req.user?.id;
+        const adminId = req.user?.id || req.headers['x-user-id'];
+
+        if (!mongoose.Types.ObjectId.isValid(roomId)) {
+            return res.status(400).json({ success: false, message: 'Invalid room ID' });
+        }
 
         if (!['approved', 'rejected'].includes(status)) {
             return res.status(400).json({ success: false, message: 'Invalid status' });
@@ -490,12 +515,16 @@ const approveRoomAdmin = async (req, res) => {
         await room.save();
 
         // Notify owner
-        if (property) {
-            if (status === 'approved') {
-                await NotificationService.notifyRoomApproval(room, property, adminId);
-            } else {
-                await NotificationService.notifyRoomRejection(room, property, adminId, reason);
+        try {
+            if (property) {
+                if (status === 'approved') {
+                    await NotificationService.notifyRoomApproval(room, property, adminId);
+                } else {
+                    await NotificationService.notifyRoomRejection(room, property, adminId, reason);
+                }
             }
+        } catch (notifError) {
+            console.error('Room notification error (non-fatal):', notifError);
         }
 
         res.json({
@@ -505,8 +534,12 @@ const approveRoomAdmin = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Approve room error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        console.error('Approve room error details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -514,7 +547,11 @@ const approveRoomAdmin = async (req, res) => {
 const sendAdminMessage = async (req, res) => {
     try {
         const { propertyId, message } = req.body;
-        const adminId = req.user?.id;
+        const adminId = req.user?.id || req.headers['x-user-id'];
+
+        if (!mongoose.Types.ObjectId.isValid(propertyId)) {
+            return res.status(400).json({ success: false, message: 'Invalid property ID' });
+        }
 
         const property = await Property.findById(propertyId);
         if (!property) {
@@ -532,8 +569,12 @@ const sendAdminMessage = async (req, res) => {
         res.json({ success: true, message: 'Message sent successfully' });
 
     } catch (error) {
-        console.error('Send admin message error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        console.error('Send admin message error details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -571,6 +612,10 @@ const getPropertyAdmin = async (req, res) => {
     try {
         const { id } = req.params;
 
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid property ID' });
+        }
+
         const property = await Property.findById(id);
 
         if (!property) {
@@ -578,8 +623,10 @@ const getPropertyAdmin = async (req, res) => {
         }
 
         // Fetch owner details
-        const User = require('../user/model');
-        const owner = await User.findById(property.owner_id).select('name email phone phoneNumber profilePicture isVerified role createdAt');
+        let owner = null;
+        if (property.owner_id && mongoose.Types.ObjectId.isValid(property.owner_id)) {
+            owner = await User.findById(property.owner_id).select('name email phone phoneNumber profilePicture isVerified role createdAt');
+        }
 
         // Fetch rooms
         const rooms = await Room.find({ property_id: id });
@@ -603,8 +650,12 @@ const getPropertyAdmin = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Get property admin error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        console.error('Get property admin error details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -612,6 +663,11 @@ const getPropertyAdmin = async (req, res) => {
 const deleteRoomAdmin = async (req, res) => {
     try {
         const { roomId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(roomId)) {
+            return res.status(400).json({ success: false, message: 'Invalid room ID' });
+        }
+
         const room = await Room.findByIdAndDelete(roomId);
 
         if (!room) {
@@ -620,8 +676,12 @@ const deleteRoomAdmin = async (req, res) => {
 
         res.json({ success: true, message: 'Room deleted successfully', data: { roomId } });
     } catch (error) {
-        console.error('Delete room admin error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        console.error('Delete room admin error details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -632,6 +692,11 @@ const deletePropertyAdmin = async (req, res) => {
 
     try {
         const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            await session.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Invalid property ID' });
+        }
 
         const property = await Property.findById(id).session(session);
         if (!property) {
@@ -651,8 +716,12 @@ const deletePropertyAdmin = async (req, res) => {
 
     } catch (error) {
         await session.abortTransaction();
-        console.error('Delete property admin error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        console.error('Delete property admin error details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
         session.endSession();
     }
@@ -789,8 +858,25 @@ const getApprovedPropertyPublic = async (req, res) => {
         const rooms = await Room.find({
             property_id: id,
             approved: true,
-            status: 'active',
-            is_available: true
+            status: 'active'
+            // is_available: true // Removed to show all rooms (frontend handles availability status)
+        }).lean(); // Use lean() to allow adding properties
+
+        // Get confirmed bookings for this property to count occupants
+        const Booking = require('./models/Booking');
+        const activeBookings = await Booking.find({
+            propertyId: id,
+            status: { $in: ['confirmed', 'checked_in', 'approved'] },
+            isDeleted: false
+        });
+
+        // Add occupant count to each room
+        const roomsWithOccupancy = rooms.map(room => {
+            const roomBookings = activeBookings.filter(b => b.roomId.toString() === room._id.toString());
+            return {
+                ...room,
+                current_occupants: roomBookings.length
+            };
         });
 
         // Get Owner details
@@ -801,7 +887,7 @@ const getApprovedPropertyPublic = async (req, res) => {
             success: true,
             data: {
                 ...property.toObject(),
-                rooms,
+                rooms: roomsWithOccupancy,
                 owner: owner || { name: 'Verified Owner' }
             }
         });

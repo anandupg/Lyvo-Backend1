@@ -1,0 +1,4 @@
+Room Data Check:
+Room 3: is_available=false (boolean), status=active
+Room 2: is_available=true (boolean), status=active
+Room 1: is_available=false (boolean), status=active

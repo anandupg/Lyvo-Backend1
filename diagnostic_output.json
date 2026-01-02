@@ -1,0 +1,81 @@
+{
+  "lastNotifications": [
+    {
+      "id": "6956dea4f3475773fbd3697b",
+      "recipient_id": "6944ebfaccd01fda432f0dad",
+      "recipient_id_type": "string",
+      "title": "📨 Message from Admin",
+      "type": "general",
+      "is_read": false,
+      "createdAt": "2026-01-01T20:52:52.560Z"
+    },
+    {
+      "id": "6956ddedf3475773fbd368bf",
+      "recipient_id": "6944ebfaccd01fda432f0dad",
+      "recipient_id_type": "string",
+      "title": "📨 Message from Admin",
+      "type": "general",
+      "is_read": false,
+      "createdAt": "2026-01-01T20:49:49.532Z"
+    },
+    {
+      "id": "6956cbd1006cf59162032095",
+      "recipient_id": "6952f0690c6ca1fe87483e2a",
+      "recipient_id_type": "string",
+      "title": "Maintenance Update",
+      "type": "maintenance_request",
+      "is_read": false,
+      "createdAt": "2026-01-01T19:32:33.324Z"
+    },
+    {
+      "id": "6956c9fa85905591aeabc198",
+      "recipient_id": "6952f0690c6ca1fe87483e2a",
+      "recipient_id_type": "string",
+      "title": "Maintenance Update",
+      "type": "maintenance_request",
+      "is_read": false,
+      "createdAt": "2026-01-01T19:24:42.768Z"
+    },
+    {
+      "id": "695397407e24c78fcf7f2fc8",
+      "recipient_id": "6952f0690c6ca1fe87483e2a",
+      "recipient_id_type": "string",
+      "title": "Booking Approved! 🎉",
+      "type": "booking_approved",
+      "is_read": false,
+      "createdAt": "2025-12-30T09:11:28.617Z"
+    },
+    {
+      "id": "69536ad340bbc605e9a6b7de",
+      "recipient_id": "6944e80bccd01fda432f0d9c",
+      "recipient_id_type": "string",
+      "title": "Maintenance Update",
+      "type": "maintenance_request",
+      "is_read": false,
+      "createdAt": "2025-12-30T06:01:55.342Z"
+    },
+    {
+      "id": "6953693e40bbc605e9a6b6c2",
+      "recipient_id": "6944e80bccd01fda432f0d9c",
+      "recipient_id_type": "string",
+      "title": "Maintenance Update",
+      "type": "maintenance_request",
+      "is_read": false,
+      "createdAt": "2025-12-30T05:55:10.680Z"
+    },
+    {
+      "id": "6952da1ca9a20ee911f84ce2",
+      "recipient_id": "6944e80bccd01fda432f0d9c",
+      "recipient_id_type": "string",
+      "title": "Booking Approved! 🎉",
+      "type": "booking_approved",
+      "is_read": false,
+      "createdAt": "2025-12-29T19:44:28.508Z"
+    }
+  ],
+  "sampleProperty": {
+    "name": "St Georges",
+    "owner_id": "6944ebfaccd01fda432f0dad",
+    "owner_id_type": "string"
+  }
+}
