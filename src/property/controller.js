@@ -839,7 +839,13 @@ const getApprovedPropertiesPublic = async (req, res) => {
                 rooms_count: rooms.length,
                 min_rent: minRent,
                 max_rent: maxRent,
-                available_rooms: rooms.length // only available approved rooms
+                available_rooms: rooms.length, // only available approved rooms
+                room_details: rooms.map(r => ({
+                    room_number: r.room_number,
+                    room_type: r.room_type,
+                    occupancy: r.occupancy,
+                    rent: r.rent
+                }))
             };
         }));
 
@@ -1622,7 +1628,12 @@ const removeFavorite = async (req, res) => {
 const getUserFavorites = async (req, res) => {
     try {
         const userId = req.user?.id;
-        const favorites = await Favorite.find({ userId }).populate('propertyId').populate('roomId');
+        const favorites = await Favorite.find({ userId })
+            .populate({
+                path: 'propertyId',
+                populate: { path: 'owner_id', select: 'name email phone phoneNumber profilePicture' }
+            })
+            .populate('roomId');
 
         // Enrich with property details if populate fails or need more info
         // (Populate should work since we have models in same process)

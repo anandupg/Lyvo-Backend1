@@ -56,7 +56,8 @@ const io = new Server(server, {
 global.io = io; // Make io accessible globally if needed, or pass it to routes
 
 const { socketAuthMiddleware } = require('./src/middleware/auth');
-const initChatSocket = require('./src/chat/socket');
+// Initialize Chat Socket
+const initChatSocket = require('./src/chat/socket.js');
 
 // Routes
 const userRoutes = require('./src/user/routes');

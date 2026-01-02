@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const propertySchema = new mongoose.Schema({
-    owner_id: { type: String, required: true, index: true },
+    owner_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     property_name: { type: String, required: true },
     description: { type: String, required: true },
     property_mode: { type: String, enum: ['room'], required: true, default: 'room' },
