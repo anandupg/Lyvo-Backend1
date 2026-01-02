@@ -249,13 +249,14 @@ class CompatibilityEngine {
             });
 
             const avgAttrScore = totalAttrScore / tenants.length; // 0 to 2
+            const formattedName = `${formatAttr(attr)} (${seeker.lifestyle[attr] || 'N/A'})`;
 
             if (avgAttrScore >= 1.5) {
-                insights.pros.push(formatAttr(attr));
+                insights.pros.push(formattedName);
             } else if (avgAttrScore <= 0.8) {
-                insights.cons.push(formatAttr(attr));
+                insights.cons.push(formattedName);
             } else {
-                insights.mixed.push(formatAttr(attr));
+                insights.mixed.push(formattedName);
             }
         });
 
@@ -270,8 +271,11 @@ class CompatibilityEngine {
             totalBudgetScore += budgetScore;
         });
         const avgBudgetScore = totalBudgetScore / tenants.length;
-        if (avgBudgetScore >= 1.5) insights.pros.push('Budget');
-        else if (avgBudgetScore <= 0.8) insights.cons.push('Budget');
+
+        const budgetStr = `Budget (₹${seeker.lifestyle.budget || 'N/A'})`;
+
+        if (avgBudgetScore >= 1.5) insights.pros.push(budgetStr);
+        else if (avgBudgetScore <= 0.8) insights.cons.push(budgetStr);
 
         return insights;
     }

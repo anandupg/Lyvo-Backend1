@@ -88,13 +88,26 @@ const processAadhar = async (req, res) => {
             idNumber = match[0];
         }
 
-        // Attempt to find name - heuristic: usually lines before the ID or specific keywords
-        // This is tricky without structured data, but we can return the raw text for frontend refinement
-        // For now, let's try to grab the first capitalized line that looks like a name
+        // DOB regex: dd/mm/yyyy or dd-mm-yyyy or yyyy
+        const dobRegex = /\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b/;
+        const dobMatch = extractedText.match(dobRegex);
+        const dob = dobMatch ? dobMatch[0] : null;
+
+        // Gender regex
+        let gender = null;
+        if (/female|महिल/i.test(extractedText)) gender = 'Female';
+        else if (/male|पुरुष/i.test(extractedText)) gender = 'Male';
+
+        // Mobile regex (10 digits, possibly separated)
+        const mobileRegex = /[6-9]\d{9}/;
+        const mobileMatch = extractedText.replace(/\s+/g, '').match(mobileRegex);
+        const mobile = mobileMatch ? mobileMatch[0] : null;
+
+        // Attempt to find name - heuristic
         for (const line of lines) {
             const trimmed = line.trim();
             // Ignore common Aadhar keywords
-            if (/government|india|male|female|dob|year|birth/i.test(trimmed)) continue;
+            if (/government|india|male|female|dob|year|birth|father|mother/i.test(trimmed)) continue;
             // Check if line is mostly letters and has length
             if (/^[a-zA-Z\s.]+$/.test(trimmed) && trimmed.length > 3) {
                 if (!name) name = trimmed;
@@ -107,6 +120,9 @@ const processAadhar = async (req, res) => {
             data: {
                 id: idNumber,
                 name: name,
+                dob: dob,
+                gender: gender,
+                mobile: mobile,
                 rawText: extractedText
             }
         });

@@ -1,0 +1,12 @@
+{
+  "user": {
+    "profilePicture": "/anandu_profile.png",
+    "govtIdFrontUrl": "https://res.cloudinary.com/dxtfnvxmz/image/upload/v1767109389/lyvo-kyc-docs/mswgkjfryppdcjkasgiv.jpg",
+    "govtIdBackUrl": null
+  },
+  "kyc": {
+    "frontImageUrl": "/anandu_profile.png",
+    "backImageUrl": null,
+    "approvalStatus": "approved"
+  }
+}

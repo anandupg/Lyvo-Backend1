@@ -1109,10 +1109,10 @@ module.exports = {
                         extracted_data: {
                             aadhar_number: controllerResult.data.id || '',
                             name: controllerResult.data.name || user.name, // Fallback to profile name if not found
-                            // OCR.space doesn't reliably return structure, leaving these empty
-                            date_of_birth: '',
-                            gender: '',
-                            address: ''
+                            date_of_birth: controllerResult.data.dob || '',
+                            gender: controllerResult.data.gender || '',
+                            mobile: controllerResult.data.mobile || '',
+                            address: controllerResult.data.address || ''
                         },
                         // Synthesize validation result
                         validation: {

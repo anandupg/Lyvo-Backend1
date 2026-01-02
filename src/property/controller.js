@@ -13,7 +13,7 @@ const Favorite = require('./models/Favorite');
 const Tenant = require('./models/Tenant');
 const Expense = require('./models/Expense');
 const User = require('../user/model');
-const { BehaviourAnswers } = require('../user/model');
+const { BehaviourAnswers, AadharDetails } = require('../user/model');
 const CompatibilityEngine = require('./services/compatibilityEngine');
 const NotificationService = require('./services/notificationService');
 
@@ -1028,7 +1028,18 @@ const getApprovedPropertyPublic = async (req, res) => {
                             };
                         }));
 
-                        const compData = await CompatibilityEngine.evaluateRoom(seekerProfile, formattedTenants);
+                        // Deduplicate tenants by userId
+                        const uniqueTenants = [];
+                        const seenUserIds = new Set();
+                        formattedTenants.forEach(t => {
+                            const id = t.userId.toString();
+                            if (!seenUserIds.has(id)) {
+                                seenUserIds.add(id);
+                                uniqueTenants.push(t);
+                            }
+                        });
+
+                        const compData = await CompatibilityEngine.evaluateRoom(seekerProfile, uniqueTenants);
                         return { ...room, compatibility: compData };
                     }));
                 }
@@ -1654,7 +1665,37 @@ const getBookingDetails = async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
-        res.json({ success: true, booking });
+        // Fetch deep details if the requester is the owner
+        let extendedData = {};
+        if (booking.ownerId.toString() === userId) {
+            try {
+                const User = require('../user/model'); // Ensure model is loaded
+                const seeker = await User.findById(booking.userId).select('gender occupation location phone profilePicture email name');
+
+                // Fetch Verified Address from Aadhar
+                const { AadharDetails } = require('../user/model'); // Import safely
+                const targetUserId = booking.userId._id || booking.userId;
+                const aadharData = await AadharDetails.findOne({ userId: targetUserId, approvalStatus: 'approved' });
+
+                extendedData = {
+                    seekerProfile: seeker ? seeker.toObject() : null,
+                    kycAddress: aadharData?.extractedData?.address || null,
+                    isKycVerified: !!aadharData,
+                    aadharImages: aadharData ? {
+                        front: aadharData.frontImageUrl,
+                        back: aadharData.backImageUrl
+                    } : null
+                };
+            } catch (err) {
+                console.error('Error fetching extended seeker details:', err);
+            }
+        }
+
+        res.json({
+            success: true,
+            booking,
+            ...extendedData // Spread extended data into top level
+        });
     } catch (error) {
         console.error('Get booking details error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
