@@ -13,6 +13,8 @@ const Favorite = require('./models/Favorite');
 const Tenant = require('./models/Tenant');
 const Expense = require('./models/Expense');
 const User = require('../user/model');
+const { BehaviourAnswers } = require('../user/model');
+const CompatibilityEngine = require('./services/compatibilityEngine');
 const NotificationService = require('./services/notificationService');
 
 // Cloudinary config
@@ -834,12 +836,63 @@ const getApprovedPropertiesPublic = async (req, res) => {
             const minRent = rents.length > 0 ? Math.min(...rents) : 0;
             const maxRent = rents.length > 0 ? Math.max(...rents) : 0;
 
+            // Compatibility Scoring (Summary for Dashboard)
+            let bestMatchScore = null;
+            const seekerId = req.user?.id;
+
+            if (seekerId) {
+                try {
+                    const seekerAnswers = await BehaviourAnswers.findOne({ userId: seekerId });
+                    const seeker = await User.findById(seekerId);
+
+                    if (seekerAnswers && seeker) {
+                        const seekerProfile = {
+                            gender: seeker.gender,
+                            age: seeker.age,
+                            lifestyle: seekerAnswers.answers
+                        };
+
+                        const roomScores = await Promise.all(rooms.map(async (room) => {
+                            // Get active tenants
+                            const tenants = await Tenant.find({
+                                roomId: room._id,
+                                status: 'active',
+                                isDeleted: { $ne: true }
+                            }).populate('userId');
+
+                            if (tenants.length === 0) return 100; // Empty room = 100% potential
+
+                            const formattedTenants = await Promise.all(tenants.map(async (t) => {
+                                const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
+                                return {
+                                    userId: t.userId._id,
+                                    name: t.userName || t.userId.name,
+                                    gender: t.userId.gender,
+                                    age: t.userId.age,
+                                    lifestyle: tAnswers ? tAnswers.answers : {}
+                                };
+                            }));
+
+                            const comp = await CompatibilityEngine.evaluateRoom(seekerProfile, formattedTenants, { skipAI: true });
+                            return comp.overallScore;
+                        }));
+
+                        if (roomScores.length > 0) {
+                            bestMatchScore = Math.max(...roomScores);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error calculating bulk compatibility:", err);
+                }
+            }
+
             return {
                 ...property.toObject(),
                 rooms_count: rooms.length,
                 min_rent: minRent,
                 max_rent: maxRent,
                 available_rooms: rooms.length, // only available approved rooms
+                matchScore: bestMatchScore, // Add best match score
                 room_details: rooms.map(r => ({
                     room_number: r.room_number,
                     room_type: r.room_type,
@@ -938,11 +991,135 @@ const getApprovedPropertyPublic = async (req, res) => {
         // const User = require('../user/model');
         // const owner = await User.findById(property.owner_id).select('name picture phone created_at');
 
+        // Calculate compatibility for each room if seekerId is present
+        let roomsWithCompatibility = roomsWithOccupancy;
+        const seekerId = req.user?.id;
+
+        if (seekerId) {
+            try {
+                const seekerAnswers = await BehaviourAnswers.findOne({ userId: seekerId });
+                const seeker = await User.findById(seekerId);
+
+                if (seekerAnswers && seeker) {
+                    const seekerProfile = {
+                        gender: seeker.gender,
+                        age: seeker.age,
+                        lifestyle: seekerAnswers.answers
+                    };
+
+                    roomsWithCompatibility = await Promise.all(roomsWithOccupancy.map(async (room) => {
+                        // Get active tenants for this room
+                        const tenants = await Tenant.find({
+                            roomId: room._id,
+                            status: 'active',
+                            isDeleted: { $ne: true }
+                        }).populate('userId');
+
+                        if (tenants.length === 0) return { ...room, compatibility: { overallScore: 100, label: "Fresh Start" } };
+
+                        const formattedTenants = await Promise.all(tenants.map(async (t) => {
+                            const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
+                            return {
+                                userId: t.userId._id,
+                                name: t.userName || t.userId.name,
+                                gender: t.userId.gender,
+                                age: t.userId.age,
+                                lifestyle: tAnswers ? tAnswers.answers : {}
+                            };
+                        }));
+
+                        const compData = await CompatibilityEngine.evaluateRoom(seekerProfile, formattedTenants);
+                        return { ...room, compatibility: compData };
+                    }));
+                }
+            } catch (err) {
+                console.error('Compatibility Engine Error (getApprovedPropertyPublic):', err);
+            }
+        }
+
+        // --- PROPERTY LEVEL COMPATIBILITY (HOUSE VIBE) ---
+        let propertyCompatibility = null;
+        let allResidents = [];
+
+
+
+        try {
+            // 1. Get ALL active tenants in the property (ALWAYS, for "Meet the Flatmates")
+            const propertyTenants = await Tenant.find({
+                propertyId: id,
+                status: 'active',
+                isDeleted: { $ne: true }
+            }).populate('userId');
+
+            if (propertyTenants.length > 0) {
+                // Deduplicate tenants by userId
+                const uniqueTenants = [];
+                const seenUserIds = new Set();
+
+                propertyTenants.forEach(t => {
+                    if (t.userId && !seenUserIds.has(t.userId._id.toString())) {
+                        seenUserIds.add(t.userId._id.toString());
+                        uniqueTenants.push(t);
+                    }
+                });
+
+                console.log('DEBUG: Raw Tenants:', propertyTenants.length);
+                console.log('DEBUG: Deduplicated Tenants:', uniqueTenants.length);
+
+                const formattedPropertyTenants = await Promise.all(uniqueTenants.map(async (t) => {
+                    const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
+                    return {
+                        userId: t.userId._id,
+                        name: t.userName || t.userId.name,
+                        gender: t.userId.gender,
+                        age: t.userId.age,
+                        lifestyle: tAnswers ? tAnswers.answers : {},
+                        profilePicture: t.userId.profilePicture
+                    };
+                }));
+
+                allResidents = formattedPropertyTenants;
+
+                // 2. Calculate Score (ONLY if Seeker is logged in)
+                if (seekerId) {
+                    const seekerAnswers = await BehaviourAnswers.findOne({ userId: seekerId });
+                    const seeker = await User.findById(seekerId);
+                    console.log('DEBUG: Seeker ID:', seekerId);
+
+                    if (seekerAnswers && seeker) {
+                        const seekerProfile = {
+                            gender: seeker.gender,
+                            age: seeker.age,
+                            lifestyle: seekerAnswers.answers
+                        };
+
+                        // Overall Score
+                        propertyCompatibility = await CompatibilityEngine.evaluateRoom(seekerProfile, formattedPropertyTenants);
+                        console.log('DEBUG: House Vibe Score:', propertyCompatibility ? propertyCompatibility.overallScore : 'null');
+
+                        // Individual Scores (for each resident)
+                        for (const t of formattedPropertyTenants) {
+                            // Create a temp tenant object with just required fields for the engine if needed, 
+                            // but formattedPropertyTenants structure matches what evaluateRoom expects (array of objects with lifestyle).
+                            const singleMatch = await CompatibilityEngine.evaluateRoom(seekerProfile, [t]);
+                            t.matchScore = singleMatch.overallScore;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Property Compatibility Error:', err);
+        }
+        // --- END PROPERTY LEVEL COMPATIBILITY ---
+        // --- END PROPERTY LEVEL COMPATIBILITY ---
+
         res.json({
             success: true,
             data: {
                 ...propertyWithDetails,
-                rooms: roomsWithOccupancy
+                rooms: roomsWithCompatibility,
+                house_vibe: propertyCompatibility,
+                current_residents: allResidents
             }
         });
 
@@ -1060,12 +1237,76 @@ const getRoomPublic = async (req, res) => {
             }
         }
 
+        // --- Compatibility & Residents Logic ---
+        let compatibilityData = null;
+        let formattedTenants = [];
+        const seekerId = req.user?.id;
+
+        try {
+            // 1. Get all active tenants in this room (ALWAYS)
+            const tenants = await Tenant.find({
+                roomId: room._id,
+                status: 'active',
+                isDeleted: { $ne: true }
+            }).populate('userId');
+
+            // Format tenants
+            formattedTenants = await Promise.all(tenants.map(async (t) => {
+                const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
+                return {
+                    userId: t.userId._id,
+                    name: t.userName || t.userId.name,
+                    gender: t.userId.gender,
+                    age: t.userId.age,
+                    lifestyle: tAnswers ? tAnswers.answers : {},
+                    profilePicture: t.userId.profilePicture,
+                    joinedAt: t.userId.createdAt
+                };
+            }));
+
+            // Deduplicate tenants by userId to prevent multiple active lease records for same person showing up twice
+            const seenIds = new Set();
+            formattedTenants = formattedTenants.filter(t => {
+                const id = t.userId.toString();
+                if (seenIds.has(id)) return false;
+                seenIds.add(id);
+                return true;
+            });
+
+            // 2. Calculate Scores (If Seeker Logged In)
+            if (seekerId) {
+                const seekerAnswers = await BehaviourAnswers.findOne({ userId: seekerId });
+                const seeker = await User.findById(seekerId);
+
+                if (seekerAnswers && seeker) {
+                    const seekerProfile = {
+                        gender: seeker.gender,
+                        age: seeker.age,
+                        lifestyle: seekerAnswers.answers
+                    };
+
+                    // Overall Score
+                    compatibilityData = await CompatibilityEngine.evaluateRoom(seekerProfile, formattedTenants);
+
+                    // Individual Scores
+                    for (const t of formattedTenants) {
+                        const singleMatch = await CompatibilityEngine.evaluateRoom(seekerProfile, [t]);
+                        t.matchScore = singleMatch.overallScore;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Compatibility Engine Error (getRoomPublic):', err);
+        }
+
         res.json({
             success: true,
             data: {
                 room: room,
                 property: property,
-                owner: owner
+                owner: owner,
+                compatibility: compatibilityData,
+                residents: formattedTenants
             }
         });
     } catch (error) {

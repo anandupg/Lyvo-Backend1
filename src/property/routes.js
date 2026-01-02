@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { authMiddleware: authenticateUser, requireRole: authorizeRoles } = require('../middleware/auth');
+const { authMiddleware: authenticateUser, requireRole: authorizeRoles, optionalAuthMiddleware } = require('../middleware/auth');
 const propertyController = require('./controller');
 const User = require('../user/model');
 
@@ -119,9 +119,9 @@ router.delete('/admin/properties/:id', authenticateUser, authorizeRoles('admin')
 router.post('/admin/message', authenticateUser, authorizeRoles('admin'), propertyController.sendAdminMessage);
 
 // Public Routes (Seeker)
-router.get('/public/properties', propertyController.getApprovedPropertiesPublic);
-router.get('/public/properties/:id', propertyController.getApprovedPropertyPublic);
-router.get('/public/rooms/:roomId', propertyController.getRoomPublic);
+router.get('/public/properties', optionalAuthMiddleware, propertyController.getApprovedPropertiesPublic);
+router.get('/public/properties/:id', optionalAuthMiddleware, propertyController.getApprovedPropertyPublic);
+router.get('/public/rooms/:roomId', optionalAuthMiddleware, propertyController.getRoomPublic);
 
 // Booking & Payments
 router.post('/payments/create-order', authenticateUser, propertyController.createPaymentOrder);
