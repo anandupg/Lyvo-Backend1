@@ -262,7 +262,7 @@ const addProperty = async (req, res) => {
         };
 
         // Create the property
-        const createdProperty = await Property.create([propertyDataToSave], { session });
+        const createdProperty = await Property.create([propertyDataToSave], { session, ordered: true });
         const propertyId = createdProperty[0]._id;
 
         // Handle room-based property (only room mode supported)
@@ -283,7 +283,7 @@ const addProperty = async (req, res) => {
         }));
 
         if (roomDocuments.length > 0) {
-            await Room.create(roomDocuments, { session });
+            await Room.create(roomDocuments, { session, ordered: true });
         }
 
         // Commit the transaction
@@ -321,11 +321,28 @@ const getProperties = async (req, res) => {
         }
 
         const ownerIdStr = String(userId);
-        console.log(`Get Properties: Fetching for owner_id: ${ownerIdStr} (Original: ${userId})`);
+        console.log(`[DEBUG_V2] Get Properties: Request userId: ${userId} (${typeof userId})`);
 
-        const properties = await Property.find({ owner_id: ownerIdStr })
-            .sort({ createdAt: -1 })
-            .lean();
+        let properties = [];
+        try {
+            // Strategy 1: Cast to ObjectId
+            if (mongoose.Types.ObjectId.isValid(userId)) {
+                const ownerObjectId = new mongoose.Types.ObjectId(userId);
+                console.log(`[DEBUG_V2] Attempting query with ObjectId: ${ownerObjectId}`);
+                properties = await Property.find({ owner_id: ownerObjectId }).sort({ createdAt: -1 }).lean();
+            }
+
+            // Strategy 2: Fallback to string if empty
+            if (properties.length === 0) {
+                console.log(`[DEBUG_V2] ObjectId query empty. Attempting query with String: ${ownerIdStr}`);
+                properties = await Property.find({ owner_id: ownerIdStr }).sort({ createdAt: -1 }).lean();
+            }
+
+            console.log(`[DEBUG_V2] Properties found: ${properties.length}`);
+
+        } catch (queryErr) {
+            console.error('[DEBUG_V2] Query error:', queryErr);
+        }
 
         // Populate rooms for each property
         const propertiesWithRooms = await Promise.all(properties.map(async (property) => {
@@ -333,7 +350,10 @@ const getProperties = async (req, res) => {
             return { ...property, rooms };
         }));
 
-        console.log(`Get Properties: Found ${propertiesWithRooms.length} properties for user ${ownerIdStr}`);
+        console.log(`[DEBUG_V2] Returning ${propertiesWithRooms.length} properties.`);
+        if (propertiesWithRooms.length > 0) {
+            console.log(`[DEBUG_V2] Sample: ${propertiesWithRooms[0].property_name}`);
+        }
 
         res.json({
             success: true,

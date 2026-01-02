@@ -1,0 +1,14 @@
+Connected to DB
+
+--- USERS ---
+Found 6 users.
+User: Anandu P Ganesh | Email: anandupganesh@gmail.com | Role: 2 | ID: 6944e61127a50a6c0775a7f0
+User: Anandu P Ganesh | Email: anandupganesh2002@gmail.com | Role: 1 | ID: 6944e80bccd01fda432f0d9c
+User: Anandu P Ganesh | Email: anandupg2022@gmail.com | Role: 3 | ID: 6944ebfaccd01fda432f0dad
+User: Anandu P Ganesh | Email: anandupg2025@gmail.com | Role: 1 | ID: 6952f0690c6ca1fe87483e2a
+User: Anandu P Ganesh | Email: anandupganesh2@gmail.com | Role: 1 | ID: 6952fa540c6ca1fe874842f6
+User: Anandu P Ganesh | Email: anandupganesh2026@mca.ajce.in | Role: 1 | ID: 6953c65313876cc5d36dd89a
+
+--- PROPERTIES ---
+Found 1 properties.
+Property: St Georges | Status: active | OwnerID: 6944ebfaccd01fda432f0dad (object)
