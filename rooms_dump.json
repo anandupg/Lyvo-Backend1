@@ -1,0 +1,26 @@
+[
+  {
+    "roomNumber": 1,
+    "id": "69450ec818ae7d6afc35a929",
+    "occupancy": 4,
+    "bookings": 0,
+    "tenants": 0,
+    "isAvailable": true
+  },
+  {
+    "roomNumber": 2,
+    "id": "694514d0d3090c9122cdfc68",
+    "occupancy": 4,
+    "bookings": 0,
+    "tenants": 0,
+    "isAvailable": true
+  },
+  {
+    "roomNumber": 3,
+    "id": "6956df04f3475773fbd369b9",
+    "occupancy": 3,
+    "bookings": 0,
+    "tenants": 0,
+    "isAvailable": true
+  }
+]

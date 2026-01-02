@@ -591,13 +591,30 @@ const getProperty = async (req, res) => {
         }
 
         // Fetch associated rooms
-        const rooms = await Room.find({ property_id: id });
+        const rooms = await Room.find({ property_id: id }).lean();
+
+        // Get confirmed bookings for this property to count occupants
+        const Booking = require('./models/Booking');
+        const activeBookings = await Booking.find({
+            propertyId: id,
+            status: { $in: ['confirmed', 'checked_in', 'approved'] },
+            isDeleted: false
+        });
+
+        // Add occupant count to each room
+        const roomsWithOccupancy = rooms.map(room => {
+            const roomBookings = activeBookings.filter(b => b.roomId.toString() === room._id.toString());
+            return {
+                ...room,
+                current_occupants: roomBookings.length
+            };
+        });
 
         res.json({
             success: true,
             data: {
                 ...property.toObject(),
-                rooms
+                rooms: roomsWithOccupancy
             }
         });
 
@@ -629,7 +646,24 @@ const getPropertyAdmin = async (req, res) => {
         }
 
         // Fetch rooms
-        const rooms = await Room.find({ property_id: id });
+        const rooms = await Room.find({ property_id: id }).lean();
+
+        // Get confirmed bookings for this property to count occupants
+        const Booking = require('./models/Booking');
+        const activeBookings = await Booking.find({
+            propertyId: id,
+            status: { $in: ['confirmed', 'checked_in', 'approved'] },
+            isDeleted: false
+        });
+
+        // Add occupant count to each room
+        const roomsWithOccupancy = rooms.map(room => {
+            const roomBookings = activeBookings.filter(b => b.roomId.toString() === room._id.toString());
+            return {
+                ...room,
+                current_occupants: roomBookings.length
+            };
+        });
 
         res.json({
             success: true,
@@ -645,7 +679,7 @@ const getPropertyAdmin = async (req, res) => {
                     role: owner?.role,
                     createdAt: owner?.createdAt
                 },
-                rooms
+                rooms: roomsWithOccupancy
             }
         });
 
@@ -848,11 +882,26 @@ const getApprovedPropertyPublic = async (req, res) => {
             _id: id,
             approved: true,
             status: 'active'
-        });
+        }).lean();
 
         if (!property) {
             return res.status(404).json({ success: false, message: 'Property not found' });
         }
+
+        // Populate Owner Details (manually or via populate if schema supports reference)
+        // Using manual fetch to be safe and explicit with fields
+        const User = require('../user/model');
+        const owner = await User.findById(property.owner_id).select('name email phone phoneNumber picture profilePicture');
+
+        const propertyWithDetails = {
+            ...property,
+            ownerDetails: owner ? {
+                name: owner.name,
+                email: owner.email,
+                phone: owner.phone || owner.phoneNumber,
+                profilePicture: owner.picture || owner.profilePicture
+            } : null
+        };
 
         // Get available rooms
         const rooms = await Room.find({
@@ -879,16 +928,15 @@ const getApprovedPropertyPublic = async (req, res) => {
             };
         });
 
-        // Get Owner details
-        const User = require('../user/model');
-        const owner = await User.findById(property.owner_id).select('name picture phone created_at');
+        // remove redundant existing owner fetch if present
+        // const User = require('../user/model');
+        // const owner = await User.findById(property.owner_id).select('name picture phone created_at');
 
         res.json({
             success: true,
             data: {
-                ...property.toObject(),
-                rooms: roomsWithOccupancy,
-                owner: owner || { name: 'Verified Owner' }
+                ...propertyWithDetails,
+                rooms: roomsWithOccupancy
             }
         });
 
@@ -1188,6 +1236,11 @@ const verifyPaymentAndCreateBooking = async (req, res) => {
             bookingId: booking._id
         });
 
+        // Update occupancy (though usually pending doesn't block, but if payment_completed/approved it might)
+        if (booking.status === 'approved' || booking.payment?.paymentStatus === 'completed') {
+            await updateRoomOccupancyStatus(roomId);
+        }
+
     } catch (error) {
         console.error('Booking creation error:', error);
         res.status(500).json({ success: false, message: 'Booking failed after payment', error: error.message });
@@ -1412,6 +1465,10 @@ const updateBookingStatus = async (req, res) => {
         }
 
         await booking.save();
+
+        // Update room occupancy based on new status
+        await updateRoomOccupancyStatus(booking.roomId);
+
         res.json({ success: true, message: `Booking ${status}`, booking });
 
     } catch (error) {
@@ -1440,6 +1497,10 @@ const cancelAndDeleteBooking = async (req, res) => {
         booking.cancelledAt = new Date();
 
         await booking.save();
+
+        // Update occupancy (frees up space)
+        await updateRoomOccupancyStatus(booking.roomId);
+
         res.json({ success: true, message: 'Booking cancelled' });
 
     } catch (error) {
@@ -1496,6 +1557,9 @@ const finalizeCheckIn = async (req, res) => {
             status: 'active'
         });
         await tenant.save();
+
+        // Update room occupancy status
+        await updateRoomOccupancyStatus(booking.roomId);
 
         res.json({
             success: true,
@@ -1884,8 +1948,10 @@ const markTenantCheckOut = async (req, res) => {
         tenant.status = 'completed';
         await tenant.save();
 
+        await tenant.save();
+
         // Also update room status to available if needed
-        // await updateRoomOccupancyStatus(tenant.roomId);
+        await updateRoomOccupancyStatus(tenant.roomId);
 
         res.json({ success: true, tenant });
     } catch (error) {
@@ -1956,7 +2022,31 @@ const getRoomTenants = async (req, res) => {
 
 // Utilities for room occupancy
 const updateRoomOccupancyStatus = async (roomId) => {
-    // Implementation logic...
+    try {
+        const room = await Room.findById(roomId);
+        if (!room) return;
+
+        // Count confirmed active bookings/tenants
+        // Statuses that count as "occupying" the room
+        const activeStatuses = ['confirmed', 'checked_in', 'approved', 'payment_completed'];
+
+        const activeCount = await Booking.countDocuments({
+            roomId: roomId,
+            status: { $in: activeStatuses },
+            isDeleted: { $ne: true }
+        });
+
+        const isFull = activeCount >= room.occupancy;
+
+        // Update room status
+        room.is_available = !isFull;
+        room.room_status = isFull ? 'full' : 'available';
+
+        await room.save();
+        console.log(`Updated Room ${room.room_number} status: Available=${room.is_available}, Count=${activeCount}/${room.occupancy}`);
+    } catch (error) {
+        console.error('Error updating room occupancy:', error);
+    }
 };
 
 const updatePropertyRoomsOccupancy = async (propertyId) => {
