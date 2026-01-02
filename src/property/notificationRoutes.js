@@ -13,6 +13,8 @@ router.get('/', authenticateUser, async (req, res) => {
         const query = { recipient_id: userId };
         if (type) query.type = type;
 
+        console.log(`🔍 Fetching notifications for user: ${userId}, query:`, query);
+
         const notifications = await Notification.find(query)
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
@@ -20,6 +22,8 @@ router.get('/', authenticateUser, async (req, res) => {
 
         const total = await Notification.countDocuments(query);
         const unread = await Notification.countDocuments({ ...query, is_read: false });
+
+        console.log(`✅ Found ${notifications.length} notifications, ${unread} unread`);
 
         res.json({
             success: true,

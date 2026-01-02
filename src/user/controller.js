@@ -5,6 +5,7 @@ const UserModel = require('./model');
 const User = UserModel; // retain existing references
 const { BehaviourAnswers, KycDocument, AadharDetails } = require('./model');
 const Tenant = require('../property/models/Tenant'); // Import Tenant model for redirection logic
+const Booking = require('../property/models/Booking'); // Import Booking model
 const firebaseAuthMiddleware = require('../middleware/firebaseAuth'); // Not used directly here but good to reference
 const admin = require('../config/firebase-admin'); // Firebase Admin SDK
 const NotificationService = require('../property/services/notificationService');
@@ -99,6 +100,21 @@ const authWithFirebase = async (req, res) => {
 
         console.log(`authWithFirebase: Tenant check for user ${user._id}: ${!!activeTenant}`);
 
+        // Check for active approved booking if NOT already a tenant
+        let activeBookingId = null;
+        if (!activeTenant && user.role === 1) {
+            const latestBooking = await Booking.findOne({
+                userId: user._id,
+                status: { $in: ['approved', 'confirmed', 'checked_in'] },
+                isDeleted: { $ne: true }
+            }).sort({ createdAt: -1 });
+
+            if (latestBooking) {
+                activeBookingId = latestBooking._id;
+                console.log(`authWithFirebase: Found active booking ${activeBookingId} for redirection`);
+            }
+        }
+
         // Prepare response compatible with loginUser/googleSignIn
         const userResponse = {
             _id: user._id,
@@ -117,6 +133,7 @@ const authWithFirebase = async (req, res) => {
             isNewUser: user.isNewUser,
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
             isTenant: !!activeTenant, // Flag for frontend redirection
+            activeBookingId: activeBookingId, // ID for post-booking dashboard redirection
             // Add other fields as needed
         };
 
@@ -894,6 +911,29 @@ const googleSignIn = async (req, res) => {
             isNewUser: user.isNewUser,
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
         };
+
+        // Check for active tenancy and booking for redirection
+        const activeTenant = await Tenant.findOne({
+            userId: user._id,
+            status: 'active',
+            isDeleted: { $ne: true }
+        });
+
+        let activeBookingId = null;
+        if (!activeTenant && user.role === 1) {
+            const latestBooking = await Booking.findOne({
+                userId: user._id,
+                status: { $in: ['approved', 'confirmed', 'checked_in'] },
+                isDeleted: { $ne: true }
+            }).sort({ createdAt: -1 });
+
+            if (latestBooking) {
+                activeBookingId = latestBooking._id;
+            }
+        }
+
+        userResponse.isTenant = !!activeTenant;
+        userResponse.activeBookingId = activeBookingId;
 
         res.status(200).json({ message: 'Google sign-in successful', user: userResponse, token });
     } catch (error) {

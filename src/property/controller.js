@@ -876,13 +876,26 @@ const getApprovedPropertiesPublic = async (req, res) => {
                             // Get active tenants
                             const tenants = await Tenant.find({
                                 roomId: room._id,
-                                status: 'active',
+                                status: { $in: ['active', 'extended'] },
                                 isDeleted: { $ne: true }
                             }).populate('userId');
 
                             if (tenants.length === 0) return 100; // Empty room = 100% potential
 
-                            const formattedTenants = await Promise.all(tenants.map(async (t) => {
+                            // Deduplicate tenants by userId
+                            const uniqueTenants = [];
+                            const seenUserIds = new Set();
+                            tenants.forEach(t => {
+                                if (t.userId) {
+                                    const uid = t.userId._id.toString();
+                                    if (!seenUserIds.has(uid)) {
+                                        seenUserIds.add(uid);
+                                        uniqueTenants.push(t);
+                                    }
+                                }
+                            });
+
+                            const formattedTenants = await Promise.all(uniqueTenants.map(async (t) => {
                                 const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
                                 return {
                                     userId: t.userId._id,
@@ -927,7 +940,6 @@ const getApprovedPropertiesPublic = async (req, res) => {
 
         // Fetch owner details in batch
         const ownerIds = [...new Set(finalProperties.map(p => p.owner_id))];
-        const User = require('../user/model');
         const owners = await User.find({ _id: { $in: ownerIds } }).select('name email phone phoneNumber picture');
 
         const userMap = {};
@@ -969,7 +981,6 @@ const getApprovedPropertyPublic = async (req, res) => {
 
         // Populate Owner Details (manually or via populate if schema supports reference)
         // Using manual fetch to be safe and explicit with fields
-        const User = require('../user/model');
         const owner = await User.findById(property.owner_id).select('name email phone phoneNumber picture profilePicture');
 
         const propertyWithDetails = {
@@ -1277,14 +1288,17 @@ const getRoomPublic = async (req, res) => {
             // 1. Get all active tenants in this room (ALWAYS)
             const tenants = await Tenant.find({
                 roomId: room._id,
-                status: 'active',
+                status: { $in: ['active', 'extended'] },
                 isDeleted: { $ne: true }
             }).populate('userId');
 
-            // Format tenants
-            formattedTenants = await Promise.all(tenants.map(async (t) => {
+            // Format tenants with presence check
+            formattedTenants = [];
+            for (const t of tenants) {
+                if (!t.userId) continue;
+
                 const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
-                return {
+                formattedTenants.push({
                     userId: t.userId._id,
                     name: t.userName || t.userId.name,
                     gender: t.userId.gender,
@@ -1292,10 +1306,10 @@ const getRoomPublic = async (req, res) => {
                     lifestyle: tAnswers ? tAnswers.answers : {},
                     profilePicture: t.userId.profilePicture,
                     joinedAt: t.userId.createdAt
-                };
-            }));
+                });
+            }
 
-            // Deduplicate tenants by userId to prevent multiple active lease records for same person showing up twice
+            // Deduplicate tenants by userId string to prevent multiple active records for same person
             const seenIds = new Set();
             formattedTenants = formattedTenants.filter(t => {
                 const id = t.userId.toString();
@@ -1366,6 +1380,18 @@ const createPaymentOrder = async (req, res) => {
         if (!amount) {
             console.log('Error: Amount missing');
             return res.status(400).json({ success: false, message: 'Amount is required' });
+        }
+
+        // Room Availability Check (if roomId is provided)
+        const { roomId } = req.body;
+        if (roomId) {
+            const room = await Room.findById(roomId);
+            if (room && (!room.is_available || room.room_status === 'full')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Room is no longer available for booking'
+                });
+            }
         }
 
         const options = {
@@ -1446,6 +1472,14 @@ const verifyPaymentAndCreateBooking = async (req, res) => {
 
         if (!property || !room || !user) {
             throw new Error('One or more entities not found during booking creation');
+        }
+
+        // Room Availability Check
+        if (!room.is_available || room.room_status === 'full') {
+            return res.status(400).json({
+                success: false,
+                message: 'Room is no longer available for booking'
+            });
         }
 
         const booking = new Booking({
@@ -1537,6 +1571,14 @@ const createBookingPublic = async (req, res) => {
 
         if (!user || !property || !room) {
             return res.status(404).json({ message: 'Resource not found' });
+        }
+
+        // Room Availability Check
+        if (!room.is_available || room.room_status === 'full') {
+            return res.status(400).json({
+                success: false,
+                message: 'Room is no longer available for booking'
+            });
         }
 
         let owner = null;
@@ -1840,30 +1882,55 @@ const finalizeCheckIn = async (req, res) => {
         booking.actualCheckInDate = new Date();
         await booking.save();
 
-        // 2. Create Tenant Record
-        const tenant = new Tenant({
+        // 2. Create Tenant Record or Update Existing
+        // Check for existing active tenant to prevent duplicates
+        let tenant = await Tenant.findOne({
             userId: booking.userId,
-            userName: booking.userSnapshot.name,
-            userEmail: booking.userSnapshot.email,
-            userPhone: booking.userSnapshot.phone,
-            profilePicture: booking.userSnapshot.profilePicture,
-            propertyId: booking.propertyId,
-            propertyName: booking.propertySnapshot.name,
             roomId: booking.roomId,
-            roomNumber: booking.roomSnapshot.roomNumber,
-            ownerId: booking.ownerId,
-            ownerName: booking.ownerSnapshot.name,
-            ownerEmail: booking.ownerSnapshot.email,
-            ownerPhone: booking.ownerSnapshot.phone,
-            bookingId: booking._id,
-            paymentId: booking.payment.razorpayPaymentId,
-            amountPaid: booking.payment.totalAmount,
-            checkInDate: booking.checkInDate || new Date(),
-            actualCheckInDate: new Date(),
-            monthlyRent: booking.payment.monthlyRent,
-            securityDeposit: booking.payment.securityDeposit,
-            status: 'active'
+            status: { $in: ['active', 'extended'] },
+            isDeleted: { $ne: true }
         });
+
+        if (tenant) {
+            console.log(`finalizeCheckIn: Found existing active tenant ${tenant._id}, updating instead of creating new.`);
+            // Update fields if necessary, or just log it. 
+            // We might want to update the bookingId if it's a new booking for the same room?
+            // For now, let's assume if they are active, they are staying.
+            // But if this is a NEW booking, maybe they checked out and came back? 
+            // If they are 'active', they shouldn't be booking again unless it's an extension?
+            // If it's a re-booking, the previous one should be completed.
+            // If we find an active one, it's a data anomaly or a double-click.
+            tenant.bookingId = booking._id; // Link new booking
+            tenant.paymentId = booking.payment.razorpayPaymentId;
+            tenant.actualCheckInDate = new Date(); // Update check-in date
+            // Update snapshot data just in case
+            tenant.userName = booking.userSnapshot.name;
+            tenant.userPhone = booking.userSnapshot.phone;
+        } else {
+            tenant = new Tenant({
+                userId: booking.userId,
+                userName: booking.userSnapshot.name,
+                userEmail: booking.userSnapshot.email,
+                userPhone: booking.userSnapshot.phone,
+                profilePicture: booking.userSnapshot.profilePicture,
+                propertyId: booking.propertyId,
+                propertyName: booking.propertySnapshot.name,
+                roomId: booking.roomId,
+                roomNumber: booking.roomSnapshot.roomNumber,
+                ownerId: booking.ownerId,
+                ownerName: booking.ownerSnapshot.name,
+                ownerEmail: booking.ownerSnapshot.email,
+                ownerPhone: booking.ownerSnapshot.phone,
+                bookingId: booking._id,
+                paymentId: booking.payment.razorpayPaymentId,
+                amountPaid: booking.payment.totalAmount,
+                checkInDate: booking.checkInDate || new Date(),
+                actualCheckInDate: new Date(),
+                monthlyRent: booking.payment.monthlyRent,
+                securityDeposit: booking.payment.securityDeposit,
+                status: 'active'
+            });
+        }
         await tenant.save();
 
         // Update room occupancy status
@@ -2012,8 +2079,17 @@ const getPropertyTenants = async (req, res) => {
     try {
         const { propertyId } = req.params;
         const ownerId = req.user?.id;
+        const { status } = req.query;
 
-        const tenants = await Tenant.find({ propertyId, ownerId, isDeleted: { $ne: true } }).sort({ createdAt: -1 });
+        // Default to active tenants if no status provided
+        const query = { propertyId, ownerId, isDeleted: { $ne: true } };
+        if (status) {
+            query.status = status;
+        } else {
+            query.status = { $in: ['active', 'extended'] };
+        }
+
+        const tenants = await Tenant.find(query).sort({ createdAt: -1 });
         res.json({ success: true, tenants });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -2089,7 +2165,7 @@ const getTenantStatus = async (req, res) => {
         // Find if user has an active tenancy
         const activeTenant = await Tenant.findOne({
             userId,
-            status: 'active',
+            status: { $in: ['active', 'extended'] },
             isDeleted: { $ne: true }
         })
             .populate('propertyId')
@@ -2124,7 +2200,7 @@ const getExpenses = async (req, res) => {
         // Find user's active property
         const activeTenant = await Tenant.findOne({
             userId,
-            status: 'active',
+            status: { $in: ['active', 'extended'] },
             isDeleted: { $ne: true }
         });
 
@@ -2257,16 +2333,35 @@ const markTenantCheckOut = async (req, res) => {
         const tenant = await Tenant.findById(tenantId);
         if (!tenant || tenant.ownerId.toString() !== ownerId) return res.status(403).json({ message: 'Unauthorized' });
 
-        tenant.actualCheckOutDate = new Date();
-        tenant.status = 'completed';
-        await tenant.save();
+        // Robustness fix: Mark ALL active/extended records for this user in this room as completed
+        // This handles cases where duplicate tenant records might have been created.
+        const updateResult = await Tenant.updateMany(
+            {
+                userId: tenant.userId,
+                roomId: tenant.roomId,
+                status: { $in: ['active', 'extended'] },
+                isDeleted: { $ne: true }
+            },
+            {
+                status: 'completed',
+                actualCheckOutDate: new Date()
+            }
+        );
 
-        await tenant.save();
+        console.log(`Checked out user ${tenant.userId} from room ${tenant.roomId}. Records updated: ${updateResult.modifiedCount}`);
+
+        // Also update associated booking status if it exists
+        if (tenant.bookingId) {
+            await Booking.findByIdAndUpdate(tenant.bookingId, {
+                status: 'checked_out',
+                actualCheckOutDate: new Date()
+            });
+        }
 
         // Also update room status to available if needed
         await updateRoomOccupancyStatus(tenant.roomId);
 
-        res.json({ success: true, tenant });
+        res.json({ success: true, message: 'Tenant checked out successfully', updatedCount: updateResult.modifiedCount });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -2308,21 +2403,23 @@ const getRoomTenants = async (req, res) => {
         // Returning minimal info
         const tenants = await Tenant.find({
             roomId,
-            status: 'active',
+            status: { $in: ['active', 'extended'] },
             isDeleted: { $ne: true }
         })
             .populate('userId', 'profilePicture')
             .select('userId userName userEmail userPhone actualCheckInDate status profilePicture');
 
-        // Deduplicate by userId to handle potential data inconsistencies
+        // Deduplicate by userId string to handle potential data inconsistencies
         const uniqueTenants = [];
         const userIds = new Set();
 
         tenants.forEach(tenant => {
-            const uid = tenant.userId?._id?.toString() || tenant.userId?.toString();
-            if (uid && !userIds.has(uid)) {
-                userIds.add(uid);
-                uniqueTenants.push(tenant);
+            if (tenant.userId) {
+                const uid = tenant.userId._id?.toString() || tenant.userId.toString();
+                if (uid && !userIds.has(uid)) {
+                    userIds.add(uid);
+                    uniqueTenants.push(tenant);
+                }
             }
         });
 
@@ -2341,7 +2438,7 @@ const updateRoomOccupancyStatus = async (roomId) => {
 
         // Count confirmed active bookings/tenants
         // Statuses that count as "occupying" the room
-        const activeStatuses = ['confirmed', 'checked_in', 'approved', 'payment_completed'];
+        const activeStatuses = ['confirmed', 'checked_in', 'approved', 'payment_completed', 'pending_approval'];
 
         const activeCount = await Booking.countDocuments({
             roomId: roomId,

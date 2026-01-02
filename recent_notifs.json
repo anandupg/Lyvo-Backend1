@@ -1,20 +1,209 @@
-{
-  "ownerId": "6944ebfaccd01fda432f0dad",
-  "count": 2,
-  "notifications": [
-    {
-      "id": "6956e153854f2888fc86b6b0",
-      "title": "📨 Message from Admin",
-      "message": "fvdv",
-      "createdAt": "2026-01-01T21:04:19.030Z",
-      "type": "general"
+[
+  {
+    "_id": "6957f68d42e020957f029e36",
+    "recipient_id": "6957f3182069ee1c58b97914",
+    "recipient_type": "seeker",
+    "title": "Booking Approved! 🎉",
+    "message": "Your booking for \"Crystal\" - Room 2 has been approved by the owner!",
+    "type": "booking_approved",
+    "related_property_id": "6957ef0242e020957f0299de",
+    "related_room_id": "6957ef0242e020957f0299e2",
+    "related_booking_id": "6957f4622069ee1c58b97ab1",
+    "action_url": "/seeker-post-booking-dashboard",
+    "is_read": false,
+    "read_at": null,
+    "created_by": "6944ebfaccd01fda432f0dad",
+    "metadata": {
+      "property_name": "Crystal",
+      "room_number": 2,
+      "property_id": "6957ef0242e020957f0299de",
+      "room_id": "6957ef0242e020957f0299e2",
+      "booking_id": "6957f4622069ee1c58b97ab1"
     },
-    {
-      "id": "6956e150854f2888fc86b6a7",
-      "title": "📨 Message from Admin",
-      "message": "fdvfd",
-      "createdAt": "2026-01-01T21:04:16.922Z",
-      "type": "general"
-    }
-  ]
-}
+    "createdAt": "2026-01-02T16:47:09.186Z",
+    "updatedAt": "2026-01-02T16:47:09.186Z",
+    "__v": 0
+  },
+  {
+    "_id": "6957f4622069ee1c58b97ab3",
+    "recipient_id": "6944ebfaccd01fda432f0dad",
+    "recipient_type": "owner",
+    "title": "New Booking Request",
+    "message": "You have a new booking request for \"Crystal\"",
+    "type": "booking_request",
+    "related_property_id": "6957ef0242e020957f0299de",
+    "related_room_id": null,
+    "related_booking_id": "6957f4622069ee1c58b97ab1",
+    "action_url": "/owner-bookings/6957f4622069ee1c58b97ab1",
+    "is_read": false,
+    "read_at": null,
+    "created_by": "6957f3182069ee1c58b97914",
+    "metadata": {
+      "property_name": "Crystal",
+      "property_id": "6957ef0242e020957f0299de",
+      "booking_id": "6957f4622069ee1c58b97ab1"
+    },
+    "createdAt": "2026-01-02T16:37:54.875Z",
+    "updatedAt": "2026-01-02T16:37:54.875Z",
+    "__v": 0
+  },
+  {
+    "_id": "6957cfd7ef7bf0c990e4dd33",
+    "recipient_id": "6953c65313876cc5d36dd89a",
+    "recipient_type": "seeker",
+    "title": "Booking Approved! 🎉",
+    "message": "Your booking for \"St Georges\" - Room 1 has been approved by the owner!",
+    "type": "booking_approved",
+    "related_property_id": "69450ec818ae7d6afc35a927",
+    "related_room_id": "69450ec818ae7d6afc35a929",
+    "related_booking_id": "6957c8a10e11d37863a87751",
+    "action_url": "/seeker-post-booking-dashboard",
+    "is_read": false,
+    "read_at": null,
+    "created_by": "6944ebfaccd01fda432f0dad",
+    "metadata": {
+      "property_name": "St Georges",
+      "room_number": 1,
+      "property_id": "69450ec818ae7d6afc35a927",
+      "room_id": "69450ec818ae7d6afc35a929",
+      "booking_id": "6957c8a10e11d37863a87751"
+    },
+    "createdAt": "2026-01-02T14:01:59.599Z",
+    "updatedAt": "2026-01-02T14:01:59.599Z",
+    "__v": 0
+  },
+  {
+    "_id": "6956cbd1006cf59162032095",
+    "recipient_id": "6952f0690c6ca1fe87483e2a",
+    "recipient_type": "seeker",
+    "title": "Maintenance Update",
+    "message": "Your maintenance request \"wdw\" is now completed",
+    "type": "maintenance_request",
+    "related_property_id": null,
+    "related_room_id": null,
+    "related_booking_id": null,
+    "action_url": "/tenant/maintenance",
+    "is_read": false,
+    "read_at": null,
+    "created_by": null,
+    "metadata": {
+      "maintenanceRequestId": "69539917acce63b6a54a6b76"
+    },
+    "createdAt": "2026-01-01T19:32:33.324Z",
+    "updatedAt": "2026-01-01T19:32:33.324Z",
+    "__v": 0
+  },
+  {
+    "_id": "6956c9fa85905591aeabc198",
+    "recipient_id": "6952f0690c6ca1fe87483e2a",
+    "recipient_type": "seeker",
+    "title": "Maintenance Update",
+    "message": "Your maintenance request \"wdw\" is now in-progress",
+    "type": "maintenance_request",
+    "related_property_id": null,
+    "related_room_id": null,
+    "related_booking_id": null,
+    "action_url": "/tenant/maintenance",
+    "is_read": false,
+    "read_at": null,
+    "created_by": null,
+    "metadata": {
+      "maintenanceRequestId": "69539917acce63b6a54a6b76"
+    },
+    "createdAt": "2026-01-01T19:24:42.768Z",
+    "updatedAt": "2026-01-01T19:24:42.768Z",
+    "__v": 0
+  },
+  {
+    "_id": "695397407e24c78fcf7f2fc8",
+    "recipient_id": "6952f0690c6ca1fe87483e2a",
+    "recipient_type": "seeker",
+    "title": "Booking Approved! 🎉",
+    "message": "Your booking for \"St George\" - Room 1 has been approved by the owner!",
+    "type": "booking_approved",
+    "related_property_id": "69450ec818ae7d6afc35a927",
+    "related_room_id": "69450ec818ae7d6afc35a929",
+    "related_booking_id": "6953924aaab913895f3d85d9",
+    "action_url": "/seeker-post-booking-dashboard",
+    "is_read": false,
+    "read_at": null,
+    "created_by": "6944ebfaccd01fda432f0dad",
+    "metadata": {
+      "property_name": "St George",
+      "room_number": 1,
+      "property_id": "69450ec818ae7d6afc35a927",
+      "room_id": "69450ec818ae7d6afc35a929",
+      "booking_id": "6953924aaab913895f3d85d9"
+    },
+    "createdAt": "2025-12-30T09:11:28.617Z",
+    "updatedAt": "2025-12-30T09:11:28.617Z",
+    "__v": 0
+  },
+  {
+    "_id": "69536ad340bbc605e9a6b7de",
+    "recipient_id": "6944e80bccd01fda432f0d9c",
+    "recipient_type": "seeker",
+    "title": "Maintenance Update",
+    "message": "Your maintenance request \"j\" is now completed",
+    "type": "maintenance_request",
+    "related_property_id": null,
+    "related_room_id": null,
+    "related_booking_id": null,
+    "action_url": "/tenant/maintenance",
+    "is_read": false,
+    "read_at": null,
+    "created_by": null,
+    "metadata": {
+      "maintenanceRequestId": "6953636433e74ea484a59064"
+    },
+    "createdAt": "2025-12-30T06:01:55.342Z",
+    "updatedAt": "2025-12-30T06:01:55.342Z",
+    "__v": 0
+  },
+  {
+    "_id": "6953693e40bbc605e9a6b6c2",
+    "recipient_id": "6944e80bccd01fda432f0d9c",
+    "recipient_type": "seeker",
+    "title": "Maintenance Update",
+    "message": "Your maintenance request \"j\" is now in-progress",
+    "type": "maintenance_request",
+    "related_property_id": null,
+    "related_room_id": null,
+    "related_booking_id": null,
+    "action_url": "/tenant/maintenance",
+    "is_read": false,
+    "read_at": null,
+    "created_by": null,
+    "metadata": {
+      "maintenanceRequestId": "6953636433e74ea484a59064"
+    },
+    "createdAt": "2025-12-30T05:55:10.680Z",
+    "updatedAt": "2025-12-30T05:55:10.680Z",
+    "__v": 0
+  },
+  {
+    "_id": "6952da1ca9a20ee911f84ce2",
+    "recipient_id": "6944e80bccd01fda432f0d9c",
+    "recipient_type": "seeker",
+    "title": "Booking Approved! 🎉",
+    "message": "Your booking for \"St George\" - Room 1 has been approved by the owner!",
+    "type": "booking_approved",
+    "related_property_id": "69450ec818ae7d6afc35a927",
+    "related_room_id": "69450ec818ae7d6afc35a929",
+    "related_booking_id": "6952d4cdf49f51cb7f053a4c",
+    "action_url": "/seeker-post-booking-dashboard",
+    "is_read": false,
+    "read_at": null,
+    "created_by": "6944ebfaccd01fda432f0dad",
+    "metadata": {
+      "property_name": "St George",
+      "room_number": 1,
+      "property_id": "69450ec818ae7d6afc35a927",
+      "room_id": "69450ec818ae7d6afc35a929",
+      "booking_id": "6952d4cdf49f51cb7f053a4c"
+    },
+    "createdAt": "2025-12-29T19:44:28.508Z",
+    "updatedAt": "2025-12-29T19:44:28.508Z",
+    "__v": 0
+  }
+]
