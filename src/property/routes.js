@@ -161,6 +161,13 @@ router.post('/expenses', authenticateUser, propertyController.addExpense);
 router.post('/expenses/:expenseId/settle', authenticateUser, propertyController.settleExpense);
 router.post('/expenses/:expenseId/remind', authenticateUser, propertyController.remindExpensePayment);
 
+// Payment Management (Owner Ledger) - NEW
+router.get('/owner/payments', authenticateUser, authorizeRoles('owner'), propertyController.getOwnerPayments);
+router.post('/owner/payments/create', authenticateUser, authorizeRoles('owner'), propertyController.createPaymentRequest);
+router.put('/owner/payments/:paymentId/paid', authenticateUser, authorizeRoles('owner'), propertyController.markPaymentAsPaid);
+router.get('/user/payments', authenticateUser, propertyController.getTenantPayments);
+router.post('/user/payments/verify', authenticateUser, propertyController.verifyRentPayment);
+
 // Debug/Maintenance
 router.get('/debug/rooms', propertyController.getAllRoomsDebug);
 router.get('/debug/bookings', authenticateUser, authorizeRoles('admin'), propertyController.getAllBookingsAdmin);

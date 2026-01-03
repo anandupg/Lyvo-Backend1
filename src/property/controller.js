@@ -12,6 +12,8 @@ const Booking = require('./models/Booking');
 const Favorite = require('./models/Favorite');
 const Tenant = require('./models/Tenant');
 const Expense = require('./models/Expense');
+const RentPayment = require('./models/RentPayment');
+const { validationResult } = require('express-validator');
 const User = require('../user/model');
 const { BehaviourAnswers, AadharDetails } = require('../user/model');
 const CompatibilityEngine = require('./services/compatibilityEngine');
@@ -2598,7 +2600,7 @@ const addRoom = async (req, res) => {
         console.log('Files:', req.files ? req.files.map(f => f.fieldname) : 'None');
 
         const parsedRoomData = JSON.parse(roomData);
-        const { room_number, room_type, rent, description, amenities, occupancy, room_size, bed_type } = parsedRoomData;
+        const { room_number, room_type, rent, security_deposit, description, amenities, occupancy, room_size, bed_type } = parsedRoomData;
 
         // Verify property ownership
         const property = await Property.findById(propertyId);
@@ -2634,6 +2636,7 @@ const addRoom = async (req, res) => {
             room_size,
             bed_type,
             rent,
+            security_deposit: security_deposit || 0, // Default to 0 if not provided
             description,
             amenities,
             occupancy: occupancy || 1,
@@ -2801,58 +2804,312 @@ const getAllBookingsAdmin = async (req, res) => {
     }
 };
 
+// ==========================================
+// RENT PAYMENT MANAGEMENT (Ledger)
+// ==========================================
+
+// Get all payments for an owner (with auto-generation for current month)
+const getOwnerPayments = async (req, res) => {
+    try {
+        const ownerId = req.user.id;
+        const { status, month, year } = req.query; // Filters
+
+        // 1. Auto-generate Rent for Active Tenants for Current Month if missing
+        const today = new Date();
+        const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+        // Find all active tenants for this owner
+        const activeTenants = await Tenant.find({
+            ownerId,
+            status: { $in: ['active', 'extended'] },
+            isDeleted: { $ne: true }
+        });
+
+        for (const tenant of activeTenants) {
+            // Check if rent record exists for this month
+            const existingRent = await RentPayment.findOne({
+                tenantId: tenant._id,
+                type: 'rent',
+                dueDate: { $gte: currentMonthStart, $lt: nextMonthStart }
+            });
+
+            if (!existingRent) {
+                // Determine Due Date (e.g., 5th of the month)
+                const dueDate = new Date(today.getFullYear(), today.getMonth(), 5);
+
+                await RentPayment.create({
+                    tenantId: tenant._id,
+                    userId: tenant.userId,
+                    ownerId,
+                    propertyId: tenant.propertyId,
+                    roomId: tenant.roomId,
+                    amount: tenant.monthlyRent,
+                    dueDate: dueDate,
+                    type: 'rent',
+                    description: `Rent for ${today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
+                    status: 'pending' // Default
+                });
+                console.log(`Auto-generated rent for tenant ${tenant.userName}`);
+            }
+        }
+
+        // 2. Fetch Payments
+        let query = { ownerId };
+        if (status && status !== 'all') query.status = status;
+
+        // Date filtering (optional)
+        if (month && year) {
+            const start = new Date(year, month - 1, 1);
+            const end = new Date(year, month, 1);
+            query.dueDate = { $gte: start, $lt: end };
+        }
+
+        const payments = await RentPayment.find(query)
+            .populate('tenantId', 'userName userEmail userPhone roomNumber propertyName')
+            .sort({ dueDate: 1 }); // Oldest due first
+
+        // Calculate "Days Overdue" dynamically for display
+        const enrichedPayments = payments.map(p => {
+            const pObj = p.toObject();
+            if (p.status !== 'paid' && p.dueDate < new Date()) {
+                const diffTime = Math.abs(new Date() - p.dueDate);
+                pObj.daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                // Auto-update status to overdue if needed
+                if (p.status === 'pending') pObj.status = 'overdue';
+            } else {
+                pObj.daysOverdue = 0;
+            }
+            return pObj;
+        });
+
+        res.json({ success: true, payments: enrichedPayments });
+
+    } catch (error) {
+        console.error('getOwnerPayments error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Create a Manual Payment Request (Custom)
+const createPaymentRequest = async (req, res) => {
+    try {
+        const ownerId = req.user.id;
+        const { tenantId, amount, reason, dueDate } = req.body;
+
+        const tenant = await Tenant.findOne({ _id: tenantId, ownerId });
+        if (!tenant) {
+            return res.status(404).json({ success: false, message: 'Tenant not found' });
+        }
+
+        const payment = await RentPayment.create({
+            tenantId,
+            userId: tenant.userId,
+            ownerId,
+            propertyId: tenant.propertyId,
+            roomId: tenant.roomId,
+            amount,
+            dueDate: dueDate || new Date(), // Default to today
+            type: 'other',
+            description: reason,
+            status: 'pending'
+        });
+
+        // Notify Tenant
+        await NotificationService.createNotification({
+            recipient_id: tenant.userId,
+            recipient_type: 'seeker',
+            title: 'New Payment Request 💰',
+            message: `You have a new payment request of ₹${amount} for: ${reason}`,
+            type: 'expense_added', // Reusing type or add 'payment_request'
+            related_property_id: tenant.propertyId,
+            action_url: '/seeker-dashboard', // Link to payment page
+            created_by: ownerId
+        });
+
+        res.json({ success: true, payment });
+
+    } catch (error) {
+        console.error('createPaymentRequest error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Mark Payment as Paid (Manual by Owner)
+const markPaymentAsPaid = async (req, res) => {
+    try {
+        const { paymentId } = req.params;
+        const ownerId = req.user.id;
+
+        const payment = await RentPayment.findOne({ _id: paymentId, ownerId });
+        if (!payment) {
+            return res.status(404).json({ success: false, message: 'Payment record not found' });
+        }
+
+        payment.status = 'paid';
+        payment.paidAt = new Date();
+        payment.paymentMethod = 'cash'; // Default for manual mark
+        await payment.save();
+
+        // Notify Tenant
+        await NotificationService.createNotification({
+            recipient_id: payment.userId,
+            recipient_type: 'seeker',
+            title: 'Payment Received ✅',
+            message: `Your payment of ₹${payment.amount} for "${payment.description}" has been marked as received.`,
+            type: 'expense_settled',
+            related_property_id: payment.propertyId,
+            created_by: ownerId
+        });
+
+        res.json({ success: true, message: 'Payment marked as paid' });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Get Payments for a Logged-in Tenant (Seeker)
+const getTenantPayments = async (req, res) => {
+    try {
+        const userId = req.user.id; // The logged-in user (seeker)
+
+        // Find payments linked to this user
+        const payments = await RentPayment.find({ userId })
+            .populate('propertyId', 'title address') // Show property details
+            .populate('ownerId', 'name email phone') // Show owner details
+            .sort({ dueDate: -1 }); // Newest first
+
+        // Calculate metadata similarly
+        const enrichedPayments = payments.map(p => {
+            const pObj = p.toObject();
+            if (p.status !== 'paid' && p.dueDate < new Date()) {
+                const diffTime = Math.abs(new Date() - p.dueDate);
+                pObj.daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (p.status === 'pending') pObj.status = 'overdue';
+            } else {
+                pObj.daysOverdue = 0;
+            }
+            return pObj;
+        });
+
+        res.json({ success: true, payments: enrichedPayments });
+
+    } catch (error) {
+        console.error('getTenantPayments error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Verify Rent/Ledger Payment
+const verifyRentPayment = async (req, res) => {
+    try {
+        const {
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            paymentId // The internal RentPayment ID
+        } = req.body;
+
+        const crypto = require('crypto');
+        const secret = '9qxxugjEleGtcqcOjWFmCB2n'; // Ideally use env var
+        const generated_signature = crypto
+            .createHmac('sha256', secret)
+            .update(razorpay_order_id + '|' + razorpay_payment_id)
+            .digest('hex');
+
+        if (generated_signature !== razorpay_signature) {
+            return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+        }
+
+        // Update Payment Record
+        const payment = await RentPayment.findById(paymentId);
+        if (!payment) return res.status(404).json({ success: false, message: 'Payment record not found' });
+
+        payment.status = 'paid';
+        payment.paidAt = new Date();
+        payment.paymentMethod = 'online'; // Razorpay
+        payment.transactionId = razorpay_payment_id;
+        payment.metadata = { ...payment.metadata, razorpayOrderId: razorpay_order_id };
+
+        await payment.save();
+
+        // Notify Owner
+        await NotificationService.createNotification({
+            recipient_id: payment.ownerId,
+            recipient_type: 'owner',
+            title: 'Rent Received 💰',
+            message: `Tenant ${payment.userId} paid ₹${payment.amount} for ${payment.description}`,
+            type: 'payment_received',
+            related_property_id: payment.propertyId,
+            created_by: payment.userId
+        });
+
+        res.json({ success: true, message: 'Payment verified and updated' });
+
+    } catch (error) {
+        console.error('verifyRentPayment error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 module.exports = {
-    getAllBookingsAdmin,
-    updateProperty,
-    updatePropertyStatus,
+    // ... Existing exports ...
     addProperty,
     getProperties,
+    getProperty,
+    updateProperty,
+    updatePropertyStatus,
+    addRoom,
+    updateRoom,
+    updateRoomStatus,
     getAllPropertiesAdmin,
+    getPropertyAdmin,
     approvePropertyAdmin,
     approveRoomAdmin,
+    deleteRoomAdmin,
+    deletePropertyAdmin,
     sendAdminMessage,
-    getProperty,
-    getPropertyAdmin,
     getApprovedPropertiesPublic,
     getApprovedPropertyPublic,
-    updateRoomStatus,
-    updateRoom,
-    addRoom,
     getRoomPublic,
-    getAllRoomsDebug,
     createPaymentOrder,
     verifyPaymentAndCreateBooking,
     createBookingPublic,
     listOwnerBookings,
     getPendingApprovalBookings,
-    checkUserBookingStatus,
     getUserBookings,
+    checkUserBookingStatus,
     getBookingDetails,
-    getBookingDetailsPublic,
     updateBookingStatus,
-    cancelAndDeleteBooking,
     finalizeCheckIn,
+    cancelAndDeleteBooking,
     lookupBookingDetails,
+    markUserCheckIn,
     addFavorite,
     removeFavorite,
     getUserFavorites,
     checkFavoriteStatus,
-    createMissingTenantRecords,
     getOwnerTenants,
     getPropertyTenants,
     getTenantDetails,
-    getUserTenantRecords,
     updateTenantDetails,
     markTenantCheckIn,
     markTenantCheckOut,
-    markUserCheckIn,
-    deleteRoomAdmin,
-    deletePropertyAdmin,
-    getRoomTenants,
+    getUserTenantRecords,
     getTenantStatus,
+    getRoomTenants,
     getExpenses,
     addExpense,
     settleExpense,
-    remindExpensePayment
+    remindExpensePayment,
+    getAllRoomsDebug,
+    getAllBookingsAdmin,
+    createMissingTenantRecords,
+    // NEW EXPORTS
+    getOwnerPayments,
+    createPaymentRequest,
+    markPaymentAsPaid,
+    getTenantPayments,
+    verifyRentPayment
 };

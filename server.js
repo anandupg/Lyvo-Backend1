@@ -87,25 +87,6 @@ io.use(socketAuthMiddleware);
 // Initialize Socket Modules
 initChatSocket(io);
 
-// Start Python OCR Service (for Single Service Deployment)
-const { spawn } = require('child_process');
-const path = require('path');
-
-try {
-    const pythonScriptPath = path.join(__dirname, 'src', 'OCR-services', 'app.py');
-    const pythonProcess = spawn('python', [pythonScriptPath], {
-        stdio: 'inherit' // Pipe output
-    });
-
-    pythonProcess.on('error', (err) => {
-        console.error('❌ Failed to start Python OCR service:', err);
-    });
-
-    console.log('✅ Python OCR Service started via spawn');
-} catch (error) {
-    console.error('⚠️ Error spawning Python process:', error);
-}
-
 // Output:
 // ...
 // Root endpoint
