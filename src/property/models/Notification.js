@@ -22,7 +22,7 @@ const notificationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['property_approved', 'property_rejected', 'room_approved', 'room_rejected', 'booking_request', 'booking_approved', 'booking_rejected', 'payment_received', 'maintenance_request', 'general', 'booking'],
+        enum: ['property_approved', 'property_rejected', 'room_approved', 'room_rejected', 'booking_request', 'booking_approved', 'booking_rejected', 'payment_received', 'maintenance_request', 'general', 'booking', 'expense_added', 'expense_settled', 'expense_reminder'],
         default: 'general'
     },
     related_property_id: {

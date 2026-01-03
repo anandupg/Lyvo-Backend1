@@ -2170,7 +2170,7 @@ const getTenantStatus = async (req, res) => {
         })
             .populate('propertyId')
             .populate('roomId')
-            .populate('ownerId', 'name email phone')
+            .populate('ownerId', 'name email phone profilePicture')
             .sort({ createdAt: -1 });
 
         // Map to property and room keys for frontend compatibility
@@ -2250,6 +2250,36 @@ const addExpense = async (req, res) => {
         });
 
         await newExpense.save();
+
+        // NOTIFICATION: Notify all tenants involved in the split (except payer)
+        try {
+            const payer = await User.findById(userId).select('name');
+            const payerName = payer ? payer.name : 'A roommate';
+
+            for (const split of splits) {
+                // Skip if the split user is the payer (or if split.user is object, check id)
+                const splitUserId = split.user?._id || split.user;
+                if (splitUserId.toString() === userId.toString()) continue;
+
+                await NotificationService.createNotification({
+                    recipient_id: splitUserId,
+                    recipient_type: 'seeker',
+                    title: 'New Expense Added 💸',
+                    message: `${payerName} added "${description}". You owe ₹${split.amount}.`,
+                    type: 'expense_added',
+                    related_property_id: activeTenant.propertyId,
+                    action_url: '/seeker-expense-split',
+                    created_by: userId,
+                    metadata: {
+                        expense_id: newExpense._id,
+                        amount: split.amount
+                    }
+                });
+            }
+        } catch (notifError) {
+            console.error('Error sending expense notifications:', notifError);
+        }
+
         res.status(201).json({ success: true, expense: newExpense });
     } catch (error) {
         console.error('Error in addExpense:', error);
@@ -2270,18 +2300,106 @@ const settleExpense = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Expense not found.' });
         }
 
-        const splitIndex = expense.splits.findIndex(s => s.user.toString() === userId.toString());
+        // Find the split for this user
+        const splitIndex = expense.splits.findIndex(s => s.user.toString() === userId);
         if (splitIndex === -1) {
-            return res.status(403).json({ success: false, message: 'You are not part of this expense split.' });
+            return res.status(403).json({ success: false, message: 'You are not part of this expense' });
         }
 
+        // Update status
         expense.splits[splitIndex].status = 'settled';
         expense.splits[splitIndex].settledAt = new Date();
 
         await expense.save();
-        res.json({ success: true, expense });
+
+        // NOTIFICATION: Notify the payer that X settled their debt
+        try {
+            const settler = await User.findById(userId).select('name');
+            const settlerName = settler ? settler.name : 'Unknown';
+
+            await NotificationService.createNotification({
+                recipient_id: expense.paidBy,
+                recipient_type: 'seeker', // Assuming payer is also a seeker/tenant
+                title: 'Payment Received! 💰',
+                message: `${settlerName} settled their share of ₹${expense.splits[splitIndex].amount} for "${expense.description}".`,
+                type: 'expense_settled',
+                related_property_id: expense.propertyId,
+                action_url: '/seeker-expense-split',
+                created_by: userId,
+                metadata: {
+                    expense_id: expense._id,
+                    amount: expense.splits[splitIndex].amount
+                }
+            });
+        } catch (notifErr) {
+            console.error('Error sending settlement notification:', notifErr);
+        }
+
+        res.json({ success: true, message: 'Expense settled successfully', expense });
+
     } catch (error) {
         console.error('Error in settleExpense:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Remind user to pay expense
+const remindExpensePayment = async (req, res) => {
+    try {
+        const requesterId = req.user.id; // The person asking for money (usually payer)
+        const { expenseId } = req.params;
+        const { userId } = req.body; // The person who owes money
+
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'Target user ID is required' });
+        }
+
+        const expense = await Expense.findById(expenseId);
+        if (!expense) {
+            return res.status(404).json({ success: false, message: 'Expense not found' });
+        }
+
+        // Verify requester is part of this expense (either payer or involved)
+        // Usually only payer reminds, but let's allow anyone involved to rely "status"
+        /*
+        if (expense.paidBy.toString() !== requesterId) {
+             return res.status(403).json({ success: false, message: 'Only the payer can send reminders' });
+        }
+        */
+
+        // Check if target user owes money
+        const split = expense.splits.find(s => s.user.toString() === userId);
+        if (!split) {
+            return res.status(404).json({ success: false, message: 'User is not part of this expense' });
+        }
+
+        if (split.status === 'settled') {
+            return res.status(400).json({ success: false, message: 'This user has already settled their share' });
+        }
+
+        // Send Notification
+        const requester = await User.findById(requesterId).select('name');
+        const requesterName = requester ? requester.name : 'Roommate';
+
+        await NotificationService.createNotification({
+            recipient_id: userId,
+            recipient_type: 'seeker',
+            title: 'Payment Reminder ⏰',
+            message: `Reminder from ${requesterName}: Please pay ₹${split.amount} for "${expense.description}".`,
+            type: 'expense_reminder',
+            related_property_id: expense.propertyId,
+            action_url: '/seeker-expense-split',
+            created_by: requesterId,
+            metadata: {
+                expense_id: expense._id,
+                amount: split.amount
+            }
+        });
+
+        res.json({ success: true, message: 'Reminder sent successfully' });
+
+    } catch (error) {
+        console.error('Error in remindExpensePayment:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -2735,5 +2853,6 @@ module.exports = {
     getTenantStatus,
     getExpenses,
     addExpense,
-    settleExpense
+    settleExpense,
+    remindExpensePayment
 };

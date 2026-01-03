@@ -159,6 +159,7 @@ router.get('/public/rooms/:roomId/tenants', propertyController.getRoomTenants);
 router.get('/expenses', authenticateUser, propertyController.getExpenses);
 router.post('/expenses', authenticateUser, propertyController.addExpense);
 router.post('/expenses/:expenseId/settle', authenticateUser, propertyController.settleExpense);
+router.post('/expenses/:expenseId/remind', authenticateUser, propertyController.remindExpensePayment);
 
 // Debug/Maintenance
 router.get('/debug/rooms', propertyController.getAllRoomsDebug);
