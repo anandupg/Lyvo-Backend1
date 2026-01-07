@@ -230,13 +230,61 @@ class CompatibilityEngine {
      * Generate deterministic pros/cons based on attribute scores
      */
     generateDeterministicExplanation(seeker, tenants) {
-        const insights = { pros: [], cons: [], mixed: [] };
+        const insights = { pros: [], cons: [], mixed: [], attributeScores: [] };
         const attributes = Object.keys(this.mapping);
 
         // Helper to format attribute name
         const formatAttr = (attr) => attr.charAt(0).toUpperCase() + attr.slice(1).replace(/([A-Z])/g, ' $1');
 
         if (!seeker.lifestyle) return insights;
+
+        // 1. Gender Match
+        if (seeker.gender) {
+            const uniqueTenantGenders = [...new Set(tenants.map(t => t.gender).filter(g => g))];
+            const genderMatch = uniqueTenantGenders.length === 0 || uniqueTenantGenders.every(g => g.toLowerCase() === seeker.gender.toLowerCase());
+            const genderScore = genderMatch ? 2 : 0; // Binary matching
+            const tenantGenderStr = uniqueTenantGenders.length > 0 ? uniqueTenantGenders.map(g => g.charAt(0).toUpperCase() + g.slice(1)).join(', ') : 'N/A';
+
+            insights.attributeScores.push({
+                attribute: 'Gender',
+                score: genderScore,
+                seekerValue: seeker.gender.charAt(0).toUpperCase() + seeker.gender.slice(1),
+                tenantValue: tenantGenderStr
+            });
+
+            if (genderMatch && uniqueTenantGenders.length > 0) insights.pros.push(`Gender (Same)`);
+            else if (!genderMatch) insights.cons.push(`Gender (Mixed)`);
+        }
+
+        // 2. Age Range
+        if (seeker.age) {
+            let totalAgeScore = 0;
+            let count = 0;
+            const tenantAges = [];
+            tenants.forEach(t => {
+                if (t.age) {
+                    tenantAges.push(t.age);
+                    const diff = Math.abs(seeker.age - t.age);
+                    // Score: 10 year gap = 1, 0 year = 2. >20 year = 0
+                    const score = Math.max(0, 2 - (diff / 10));
+                    totalAgeScore += score;
+                    count++;
+                }
+            });
+
+            const avgAgeScore = count > 0 ? totalAgeScore / count : 2; // Default to good if no data
+            const tenantAgeStr = tenantAges.length > 0 ? tenantAges.join(', ') : 'N/A';
+
+            insights.attributeScores.push({
+                attribute: 'Age',
+                score: avgAgeScore,
+                seekerValue: seeker.age.toString(),
+                tenantValue: tenantAgeStr
+            });
+
+            if (avgAgeScore >= 1.5) insights.pros.push(`Age (Similar)`);
+            else if (avgAgeScore <= 0.8) insights.cons.push(`Age Gap`);
+        }
 
         attributes.forEach(attr => {
             let totalAttrScore = 0;
@@ -248,15 +296,29 @@ class CompatibilityEngine {
                 totalAttrScore += Math.max(0, 2 - diff);
             });
 
-            const avgAttrScore = totalAttrScore / tenants.length; // 0 to 2
-            const formattedName = `${formatAttr(attr)} (${seeker.lifestyle[attr] || 'N/A'})`;
+            const avgAttrScore = tenants.length > 0 ? totalAttrScore / tenants.length : 2; // Default to perfect if no tenants
+            const formattedName = `${formatAttr(attr)}`;
+
+            // Collect unique tenant values for better precision
+            const uniqueTenantValues = [...new Set(tenants.map(t => t.lifestyle ? t.lifestyle[attr] : undefined).filter(v => v))];
+            const tenantValueStr = uniqueTenantValues.length > 0 ? uniqueTenantValues.join(', ') : 'N/A';
+
+            // Push to attributeScores for visual UI
+            insights.attributeScores.push({
+                attribute: formattedName,
+                score: avgAttrScore, // 0 to 2
+                seekerValue: seeker.lifestyle[attr] || 'N/A',
+                tenantValue: tenantValueStr
+            });
+
+            const formattedNameWithVal = `${formattedName} (${seeker.lifestyle[attr] || 'N/A'})`;
 
             if (avgAttrScore >= 1.5) {
-                insights.pros.push(formattedName);
+                insights.pros.push(formattedNameWithVal);
             } else if (avgAttrScore <= 0.8) {
-                insights.cons.push(formattedName);
+                insights.cons.push(formattedNameWithVal);
             } else {
-                insights.mixed.push(formattedName);
+                insights.mixed.push(formattedNameWithVal);
             }
         });
 
@@ -270,9 +332,17 @@ class CompatibilityEngine {
             const budgetScore = Math.max(0, 2 - (budgetDiff / 5000));
             totalBudgetScore += budgetScore;
         });
-        const avgBudgetScore = totalBudgetScore / tenants.length;
+        const avgBudgetScore = tenants.length > 0 ? totalBudgetScore / tenants.length : 2;
 
         const budgetStr = `Budget (₹${seeker.lifestyle.budget || 'N/A'})`;
+
+        // Add budget to attributeScores
+        insights.attributeScores.push({
+            attribute: 'Budget',
+            score: avgBudgetScore,
+            seekerValue: `₹${seeker.lifestyle.budget || 'N/A'}`,
+            tenantValue: 'Varies'
+        });
 
         if (avgBudgetScore >= 1.5) insights.pros.push(budgetStr);
         else if (avgBudgetScore <= 0.8) insights.cons.push(budgetStr);

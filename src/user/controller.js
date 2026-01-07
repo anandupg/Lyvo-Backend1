@@ -1014,10 +1014,35 @@ module.exports = {
         try {
             const userId = req.user.id;
             const { answers } = req.body || {};
+
+            // Sync key profile fields to User model
+            const updates = {
+                isNewUser: false,
+                hasCompletedBehaviorQuestions: true
+            };
+
+            if (answers.gender) updates.gender = answers.gender.toLowerCase();
+            if (answers.occupation) updates.occupation = answers.occupation;
+
+            if (answers.dob) {
+                // Calculate age
+                const birthDate = new Date(answers.dob);
+                const today = new Date();
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                }
+                updates.age = age;
+                // We don't store dob directly on User model in current schema, only age. 
+                // But if schema has it, we could. Schema checks: dob is NOT in User schema, only age.
+            }
+
             await BehaviourAnswers.findOneAndUpdate({ userId }, { answers, completedAt: new Date() }, { upsert: true, new: true });
-            await User.findByIdAndUpdate(userId, { isNewUser: false, hasCompletedBehaviorQuestions: true });
+            await User.findByIdAndUpdate(userId, updates);
             res.json({ message: 'Saved' });
         } catch (e) {
+            console.error("Save answers error:", e);
             res.status(500).json({ message: 'Server error' });
         }
     },
@@ -1025,12 +1050,14 @@ module.exports = {
     getBehaviourQuestions: async (req, res) => {
         const questions = [
             {
-                id: 'budget',
-                text: 'What is your monthly budget?',
-                type: 'range',
-                min: 5000,
-                max: 50000,
-                step: 1000
+                id: 'gender',
+                text: 'What is your gender?',
+                options: ['Male', 'Female']
+            },
+            {
+                id: 'dob',
+                text: 'What is your date of birth?',
+                type: 'date'
             },
             {
                 id: 'occupation',
