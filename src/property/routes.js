@@ -123,6 +123,9 @@ router.get('/public/properties', optionalAuthMiddleware, propertyController.getA
 router.get('/public/properties/:id', optionalAuthMiddleware, propertyController.getApprovedPropertyPublic);
 router.get('/public/rooms/:roomId', optionalAuthMiddleware, propertyController.getRoomPublic);
 
+// ML Prediction Route
+router.post('/predict-rent', authenticateUser, propertyController.predictRent);
+
 // Booking & Payments
 router.post('/payments/create-order', authenticateUser, propertyController.createPaymentOrder);
 router.post('/payments/verify', authenticateUser, propertyController.verifyPaymentAndCreateBooking);

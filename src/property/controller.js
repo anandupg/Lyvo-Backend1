@@ -17,6 +17,7 @@ const { validationResult } = require('express-validator');
 const User = require('../user/model');
 const { BehaviourAnswers, AadharDetails } = require('../user/model');
 const CompatibilityEngine = require('./services/compatibilityEngine');
+const PriceService = require('./services/priceService');
 const NotificationService = require('./services/notificationService');
 
 // Cloudinary config
@@ -3053,8 +3054,32 @@ const verifyRentPayment = async (req, res) => {
     }
 };
 
+// Predict rent API
+const predictRent = async (req, res) => {
+    try {
+        const { location, roomType, roomSize, amenities, propertyAmenities } = req.body;
+
+        // Basic validation
+        if (!roomSize) {
+            return res.status(400).json({ success: false, message: 'Room size is required' });
+        }
+
+        const prediction = await PriceService.predictRent({
+            location,
+            roomType,
+            roomSize,
+            amenities,
+            propertyAmenities
+        });
+
+        res.status(200).json(prediction);
+    } catch (error) {
+        console.error('Predict Rent Controller Error:', error);
+        res.status(500).json({ success: false, message: 'Failed to predict rent' });
+    }
+};
+
 module.exports = {
-    // ... Existing exports ...
     addProperty,
     getProperties,
     getProperty,
@@ -3062,7 +3087,6 @@ module.exports = {
     updatePropertyStatus,
     addRoom,
     updateRoom,
-    updateRoomStatus,
     getAllPropertiesAdmin,
     getPropertyAdmin,
     approvePropertyAdmin,
@@ -3073,23 +3097,25 @@ module.exports = {
     getApprovedPropertiesPublic,
     getApprovedPropertyPublic,
     getRoomPublic,
+    updateRoomStatus,
     createPaymentOrder,
     verifyPaymentAndCreateBooking,
     createBookingPublic,
     listOwnerBookings,
     getPendingApprovalBookings,
-    getUserBookings,
     checkUserBookingStatus,
+    getUserBookings,
     getBookingDetails,
     updateBookingStatus,
-    finalizeCheckIn,
     cancelAndDeleteBooking,
+    finalizeCheckIn,
     lookupBookingDetails,
     markUserCheckIn,
     addFavorite,
     removeFavorite,
     getUserFavorites,
     checkFavoriteStatus,
+    createMissingTenantRecords,
     getOwnerTenants,
     getPropertyTenants,
     getTenantDetails,
@@ -3103,13 +3129,12 @@ module.exports = {
     addExpense,
     settleExpense,
     remindExpensePayment,
-    getAllRoomsDebug,
-    getAllBookingsAdmin,
-    createMissingTenantRecords,
-    // NEW EXPORTS
     getOwnerPayments,
     createPaymentRequest,
     markPaymentAsPaid,
     getTenantPayments,
-    verifyRentPayment
+    verifyRentPayment,
+    getAllRoomsDebug,
+    getAllBookingsAdmin,
+    predictRent
 };
