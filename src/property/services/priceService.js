@@ -44,7 +44,9 @@ const predictRent = async (data) => {
             furnished: furnishedStatus
         };
 
-        const response = await axios.post(`${ML_SERVICE_URL}/predict_rent`, payload);
+        const response = await axios.post(`${ML_SERVICE_URL}/predict_rent`, payload, {
+            timeout: 30000 // 30 second timeout for cold starts
+        });
 
         if (response.data && response.data.success) {
             return response.data;
