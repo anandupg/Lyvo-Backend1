@@ -88,7 +88,7 @@ const authWithFirebase = async (req, res) => {
         const token = jwt.sign(
             { id: user._id, role: user.role, email: user.email, name: user.name },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1d' }
         );
 
         // Check for active tenancy
@@ -590,7 +590,7 @@ const verifyEmail = async (req, res) => {
         const jwtToken = jwt.sign(
             { id: user._id, role: user.role, email: user.email, name: user.name },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1d' }
         );
 
         // Omit password from response
@@ -656,7 +656,7 @@ const loginUser = async (req, res) => {
         const token = jwt.sign(
             payload,
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1d' }
         );
 
         // Omit password from response
@@ -896,7 +896,7 @@ const googleSignIn = async (req, res) => {
                 name: user.name
             },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1d' }
         );
 
         const userResponse = {
