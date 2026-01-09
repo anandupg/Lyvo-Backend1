@@ -8,6 +8,7 @@ const roomSchema = new mongoose.Schema({
     bed_type: { type: String, required: true, enum: ['Single Bed', 'Double Bed', 'Queen Bed', 'King Bed', 'Bunk Bed', 'No Bed'] },
     occupancy: { type: Number, required: true },
     rent: { type: Number, required: true },
+    perPersonRent: { type: Number, required: true, default: 0 },
     amenities: {
         ac: { type: Boolean, default: false },
         wifi: { type: Boolean, default: false },
