@@ -64,6 +64,7 @@ const bookingSchema = new mongoose.Schema({
         bedType: String,
         occupancy: Number,
         rent: Number,
+        perPersonRent: Number,
         amenities: Object,
         images: {
             room: String,

@@ -278,6 +278,7 @@ const addProperty = async (req, res) => {
             bed_type: room.bedType || '',
             occupancy: parseInt(room.occupancy) || 1,
             rent: parseFloat(room.rent) || 0,
+            perPersonRent: Math.ceil((parseFloat(room.rent) || 0) / (parseInt(room.occupancy) || 1)),
             amenities: room.amenities || {},
             description: room.description || '',
             room_image: roomsUploads[index]?.roomImage || null,
@@ -842,9 +843,9 @@ const getApprovedPropertiesPublic = async (req, res) => {
             };
 
             if (minPrice || maxPrice) {
-                roomQuery.rent = {};
-                if (minPrice) roomQuery.rent.$gte = Number(minPrice);
-                if (maxPrice) roomQuery.rent.$lte = Number(maxPrice);
+                roomQuery.perPersonRent = {};
+                if (minPrice) roomQuery.perPersonRent.$gte = Number(minPrice);
+                if (maxPrice) roomQuery.perPersonRent.$lte = Number(maxPrice);
             }
 
             const rooms = await Room.find(roomQuery);
@@ -854,8 +855,8 @@ const getApprovedPropertiesPublic = async (req, res) => {
                 return null;
             }
 
-            // Find min and max rent
-            const rents = rooms.map(r => r.rent);
+            // Find min and max rent (Per Person)
+            const rents = rooms.map(r => r.perPersonRent || Math.ceil(r.rent / r.occupancy));
             const minRent = rents.length > 0 ? Math.min(...rents) : 0;
             const maxRent = rents.length > 0 ? Math.max(...rents) : 0;
 
@@ -933,7 +934,8 @@ const getApprovedPropertiesPublic = async (req, res) => {
                     room_number: r.room_number,
                     room_type: r.room_type,
                     occupancy: r.occupancy,
-                    rent: r.rent
+                    rent: r.rent,
+                    perPersonRent: r.perPersonRent || Math.ceil(r.rent / r.occupancy)
                 }))
             };
         }));
@@ -1241,6 +1243,13 @@ const updateRoom = async (req, res) => {
         delete updates.approval_status;
         delete updates.property_id;
 
+        if (updates.rent || updates.occupancy) {
+            const newRent = updates.rent !== undefined ? parseFloat(updates.rent) : room.rent;
+            const newOccupancy = updates.occupancy !== undefined ? parseInt(updates.occupancy) : room.occupancy;
+            // Ensure perPersonRent is updated
+            updates.perPersonRent = Math.ceil(newRent / (newOccupancy || 1));
+        }
+
         Object.assign(room, updates);
         await room.save();
 
@@ -1485,6 +1494,12 @@ const verifyPaymentAndCreateBooking = async (req, res) => {
             });
         }
 
+        // Validate Rent (Per-Person Fixed Model)
+        const expectedRent = room.perPersonRent || Math.ceil(room.rent / room.occupancy) || 0;
+        if (monthlyRent && Math.abs(monthlyRent - expectedRent) > 10) {
+            console.warn(`Rent mismatch in booking: Expected ${expectedRent}, Got ${monthlyRent}`);
+        }
+
         const booking = new Booking({
             userId,
             ownerId: property.owner_id,
@@ -1527,7 +1542,9 @@ const verifyPaymentAndCreateBooking = async (req, res) => {
                 roomSize: room.room_size,
                 bedType: room.bed_type,
                 occupancy: room.occupancy,
+                occupancy: room.occupancy,
                 rent: room.rent,
+                perPersonRent: room.perPersonRent || Math.ceil(room.rent / room.occupancy),
                 amenities: room.amenities,
                 images: {
                     room: room.room_image,
@@ -2057,6 +2074,7 @@ const getOwnerTenants = async (req, res) => {
 
         const tenants = await Tenant.find(query)
             .populate('userId', 'name email phone profilePicture')
+            .populate('roomId')
             .sort({ createdAt: -1 });
 
         // Map to ensure profile info is available at top level for frontend
@@ -2069,6 +2087,17 @@ const getOwnerTenants = async (req, res) => {
                 tObj.userPhone = t.userId.phone || tObj.userPhone;
             }
             return tObj;
+        });
+
+        // Ensure monthlyRent reflects perPersonRent for display consistency
+        enrichedTenants.forEach(t => {
+            if (t.roomId) {
+                // Use perPersonRent if available, otherwise calculate it
+                const ppRent = t.roomId.perPersonRent || Math.ceil((t.roomId.rent || 0) / (t.roomId.occupancy || 1));
+                if (ppRent > 0) {
+                    t.monthlyRent = ppRent;
+                }
+            }
         });
 
         res.json({ success: true, tenants: enrichedTenants });
@@ -2143,6 +2172,14 @@ const getTenantDetails = async (req, res) => {
             tenantObj.userName = tenant.userId.name || tenantObj.userName; // Also update name if needed
         }
 
+        // Ensure monthlyRent reflects perPersonRent for display consistency
+        if (tenant.roomId) {
+            const ppRent = tenant.roomId.perPersonRent || Math.ceil((tenant.roomId.rent || 0) / (tenant.roomId.occupancy || 1));
+            if (ppRent > 0) {
+                tenantObj.monthlyRent = ppRent;
+            }
+        }
+
         res.json({ success: true, tenant: tenantObj });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -2183,6 +2220,11 @@ const getTenantStatus = async (req, res) => {
             tenantData.property = tenantData.propertyId;
             tenantData.room = tenantData.roomId;
             tenantData.owner = tenantData.ownerId;
+
+            // Fallback for Security Deposit if not explicitly set on tenant
+            if (!tenantData.securityDeposit && tenantData.propertyId?.security_deposit) {
+                tenantData.securityDeposit = tenantData.propertyId.security_deposit;
+            }
         }
 
         res.json({
@@ -2825,7 +2867,7 @@ const getOwnerPayments = async (req, res) => {
             ownerId,
             status: { $in: ['active', 'extended'] },
             isDeleted: { $ne: true }
-        });
+        }).populate('roomId');
 
         for (const tenant of activeTenants) {
             // Check if rent record exists for this month
@@ -2845,7 +2887,7 @@ const getOwnerPayments = async (req, res) => {
                     ownerId,
                     propertyId: tenant.propertyId,
                     roomId: tenant.roomId,
-                    amount: tenant.monthlyRent,
+                    amount: tenant.roomId?.perPersonRent || Math.ceil((tenant.roomId?.rent || 0) / (tenant.roomId?.occupancy || 1)) || tenant.monthlyRent,
                     dueDate: dueDate,
                     type: 'rent',
                     description: `Rent for ${today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
@@ -2868,11 +2910,23 @@ const getOwnerPayments = async (req, res) => {
 
         const payments = await RentPayment.find(query)
             .populate('tenantId', 'userName userEmail userPhone roomNumber propertyName')
+            .populate('roomId') // Populate Room for rent validation
             .sort({ dueDate: 1 }); // Oldest due first
 
-        // Calculate "Days Overdue" dynamically for display
+        // Calculate "Days Overdue" dynamically and FIX RENT AMOUNT
         const enrichedPayments = payments.map(p => {
             const pObj = p.toObject();
+
+            // FIX: Ensure amount is Per Person Rent if it looks like Total Rent was saved
+            if (p.type === 'rent' && p.roomId) {
+                const ppRent = p.roomId.perPersonRent || Math.ceil((p.roomId.rent || 0) / (p.roomId.occupancy || 1));
+                // If stored amount is vastly different (likely Total Rent), use PP Rent
+                // Or simply enforce PP Rent for display consistency on unpaid bills
+                if ((p.status === 'pending' || p.status === 'overdue') && ppRent > 0) {
+                    pObj.amount = ppRent;
+                }
+            }
+
             if (p.status !== 'paid' && p.dueDate < new Date()) {
                 const diffTime = Math.abs(new Date() - p.dueDate);
                 pObj.daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
