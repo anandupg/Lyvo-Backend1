@@ -11,18 +11,9 @@ const predictRent = async (data) => {
     try {
         console.log('Predicting rent for:', data);
 
-        // Map frontend data to ML model expected format
-        // Calculate furnishing status
-        const furnitureItems = ['tv', 'fridge', 'wardrobe', 'studyTable'];
-        let furnitureCount = 0;
-        furnitureItems.forEach(item => {
-            if (data.amenities?.[item]) furnitureCount++;
-        });
-
-        let furnishedStatus = 'Unfurnished';
-        if (furnitureCount >= 3) furnishedStatus = 'Fully'; // e.g. TV + Fridge + Wardrobe
-        else if (furnitureCount >= 1) furnishedStatus = 'Semi';
-
+        // Individual amenity flags already capture furnishing info —
+        // don't derive a separate 'furnished' status from them,
+        // as it creates conflicting signals for the ML model.
         const payload = {
             location: data.location || 'Other',
             room_type: data.roomType || 'Single',
@@ -41,7 +32,11 @@ const predictRent = async (data) => {
             study_table: data.amenities?.studyTable ? 1 : 0,
             balcony: data.amenities?.balcony ? 1 : 0,
 
-            furnished: furnishedStatus
+            // Bed Type
+            bed_type: data.bedType || 'Single Bed',
+
+            // Always 'Unfurnished' — individual flags above handle furnishing
+            furnished: 'Unfurnished'
         };
 
         const response = await axios.post(`${ML_SERVICE_URL}/predict_rent`, payload, {

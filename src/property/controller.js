@@ -46,7 +46,7 @@ const razorpay = new Razorpay({
 const uploadImage = async (file) => {
     try {
         console.log('=== UPLOAD IMAGE FUNCTION CALLED ===');
-        console.log('Uploading image to Cloudinary:', file.originalname);
+        console.log('Uploading image to Cloudinary (Buffer):', file.originalname);
 
         // Determine file type
         const fileExtension = file.originalname.toLowerCase().split('.').pop();
@@ -62,29 +62,22 @@ const uploadImage = async (file) => {
             throw new Error('Only image files (JPG, PNG, GIF, WebP) are allowed for images');
         }
 
+        // Convert buffer to data URI for Cloudinary
+        const b64 = Buffer.from(file.buffer).toString('base64');
+        const dataURI = `data:${file.mimetype};base64,${b64}`;
+
         // Upload to images folder with image resource type
         const uniqueId = `img-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
         const uploadOptions = {
-            resource_type: 'image', // Use image resource type for images
-            public_id: `lyvo-properties/images/${uniqueId}`, // Include folder in public_id
+            resource_type: 'image',
+            public_id: `lyvo-properties/images/${uniqueId}`,
             overwrite: false,
-            invalidate: true, // Invalidate CDN cache
-            access_mode: 'public', // Make files publicly accessible
-            use_filename: false, // Don't use original filename
-            unique_filename: false, // We're setting our own public_id
-            type: 'upload', // Explicitly set upload type
-            sign_url: false // Don't sign URLs for public access
+            invalidate: true,
+            access_mode: 'public',
+            type: 'upload'
         };
 
-        const result = await cloudinary.uploader.upload(file.path, uploadOptions);
-
-        // Delete the local file after upload
-        const fs = require('fs');
-        try {
-            fs.unlinkSync(file.path);
-        } catch (deleteError) {
-            console.log('Could not delete local file:', deleteError.message);
-        }
+        const result = await cloudinary.uploader.upload(dataURI, uploadOptions);
 
         return {
             success: true,
@@ -101,7 +94,7 @@ const uploadImage = async (file) => {
 // Upload PDF documents to Cloudinary
 const uploadDocument = async (file) => {
     try {
-        console.log('Uploading PDF to Cloudinary:', file.originalname);
+        console.log('Uploading PDF to Cloudinary (Buffer):', file.originalname);
 
         // Determine if it's a PDF
         const fileExtension = file.originalname.toLowerCase().split('.').pop();
@@ -111,30 +104,23 @@ const uploadDocument = async (file) => {
             throw new Error('Only PDF files are allowed for documents');
         }
 
+        // Convert buffer to data URI for Cloudinary
+        const b64 = Buffer.from(file.buffer).toString('base64');
+        const dataURI = `data:${file.mimetype};base64,${b64}`;
+
         // Upload to dedicated PDF folder with raw resource type
         const uniqueId = `pdf-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
         const uploadOptions = {
-            resource_type: 'raw', // Use raw resource type for proper PDF handling
+            resource_type: 'raw',
             format: 'pdf',
-            public_id: `lyvo-properties/pdfs/${uniqueId}`, // Include folder in public_id
+            public_id: `lyvo-properties/pdfs/${uniqueId}`,
             overwrite: false,
-            invalidate: true, // Invalidate CDN cache
-            access_mode: 'public', // Make files publicly accessible
-            use_filename: false, // Don't use original filename
-            unique_filename: false, // We're setting our own public_id
-            type: 'upload', // Explicitly set upload type
-            sign_url: false // Don't sign URLs for public access
+            invalidate: true,
+            access_mode: 'public',
+            type: 'upload'
         };
 
-        const result = await cloudinary.uploader.upload(file.path, uploadOptions);
-
-        // Delete the local file after upload
-        const fs = require('fs');
-        try {
-            fs.unlinkSync(file.path);
-        } catch (deleteError) {
-            console.log('Could not delete local file:', deleteError.message);
-        }
+        const result = await cloudinary.uploader.upload(dataURI, uploadOptions);
 
         return {
             success: true,
@@ -1218,15 +1204,17 @@ const updateRoom = async (req, res) => {
         const updates = req.body;
         const userId = req.user?.id;
 
-        // Handle uploaded files
-        if (req.files) {
-            if (req.files.roomImage && req.files.roomImage[0]) {
-                const result = await uploadImage(req.files.roomImage[0]);
-                if (result.success) updates.room_image = result.url;
-            }
-            if (req.files.toiletImage && req.files.toiletImage[0]) {
-                const result = await uploadImage(req.files.toiletImage[0]);
-                if (result.success) updates.toilet_image = result.url;
+        // Handle uploaded files (since we use propertyUpload = upload.any())
+        if (req.files && Array.isArray(req.files)) {
+            for (const file of req.files) {
+                if (file.fieldname === 'room_image') {
+                    const result = await uploadImage(file);
+                    if (result.success) updates.room_image = result.url;
+                }
+                if (file.fieldname === 'toilet_image') {
+                    const result = await uploadImage(file);
+                    if (result.success) updates.toilet_image = result.url;
+                }
             }
         }
 
@@ -1234,7 +1222,7 @@ const updateRoom = async (req, res) => {
         if (!room) return res.status(404).json({ message: 'Room not found' });
 
         const property = await Property.findById(room.property_id);
-        if (!property || property.owner_id !== userId) {
+        if (!property || property.owner_id.toString() !== userId) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
@@ -1242,6 +1230,17 @@ const updateRoom = async (req, res) => {
         delete updates.approved;
         delete updates.approval_status;
         delete updates.property_id;
+        delete updates._id;
+        delete updates.roomData;
+
+        // Parse amenities if it's sent as a string from FormData
+        if (updates.amenities && typeof updates.amenities === 'string') {
+            try {
+                updates.amenities = JSON.parse(updates.amenities);
+            } catch (e) {
+                console.error('Failed to parse amenities:', e);
+            }
+        }
 
         if (updates.rent || updates.occupancy) {
             const newRent = updates.rent !== undefined ? parseFloat(updates.rent) : room.rent;
@@ -3111,7 +3110,7 @@ const verifyRentPayment = async (req, res) => {
 // Predict rent API
 const predictRent = async (req, res) => {
     try {
-        const { location, roomType, roomSize, amenities, propertyAmenities } = req.body;
+        const { location, roomType, roomSize, bedType, amenities, propertyAmenities } = req.body;
 
         // Basic validation
         if (!roomSize) {
@@ -3122,6 +3121,7 @@ const predictRent = async (req, res) => {
             location,
             roomType,
             roomSize,
+            bedType,
             amenities,
             propertyAmenities
         });
