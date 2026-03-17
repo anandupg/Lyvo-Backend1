@@ -40,7 +40,7 @@ const predictRent = async (data) => {
         };
 
         const response = await axios.post(`${ML_SERVICE_URL}/predict_rent`, payload, {
-            timeout: 30000 // 30 second timeout for cold starts
+            timeout: 60000 // 60 second timeout for cold starts
         });
 
         if (response.data && response.data.success) {
