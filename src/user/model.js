@@ -23,6 +23,11 @@ const userSchema = new mongoose.Schema({
         sparse: true, // Allows multiple null values
         trim: true
     },
+    authProvider: {
+        type: String,
+        default: 'local', // 'local' for email/password, 'firebase' for Google/Social
+        trim: true
+    },
     profilePicture: {
         type: String,
         default: null,

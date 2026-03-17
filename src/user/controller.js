@@ -134,6 +134,8 @@ const authWithFirebase = async (req, res) => {
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
             isTenant: !!activeTenant, // Flag for frontend redirection
             activeBookingId: activeBookingId, // ID for post-booking dashboard redirection
+            authProvider: user.authProvider,
+            googleId: user.googleId
             // Add other fields as needed
         };
 
@@ -677,7 +679,9 @@ const loginUser = async (req, res) => {
             isNewUser: user.isNewUser,
             hasCompletedBehaviorQuestions: user.hasCompletedBehaviorQuestions,
             createdAt: user.createdAt,
-            updatedAt: user.updatedAt
+            updatedAt: user.updatedAt,
+            authProvider: user.authProvider,
+            googleId: user.googleId
         };
 
         // Check for active tenancy
@@ -827,7 +831,7 @@ const updateUserProfile = async (req, res) => {
         const updateData = req.body;
         if (req.user.id !== userId) return res.status(403).json({ message: 'You can only update your own profile' });
 
-        const { email, password, googleId, role, isVerified, verificationToken, verificationTokenExpires, ...safeUpdateData } = updateData;
+        const { email, password, googleId, authProvider, role, isVerified, verificationToken, verificationTokenExpires, ...safeUpdateData } = updateData;
 
         const user = await User.findByIdAndUpdate(userId, { $set: safeUpdateData }, { new: true, runValidators: true }).select('-password');
         if (!user) return res.status(404).json({ message: 'User not found' });
@@ -866,6 +870,7 @@ const googleSignIn = async (req, res) => {
         if (!user) {
             user = new User({
                 name, email, googleId, profilePicture: picture, role: role || 1, isVerified: true,
+                authProvider: 'firebase',
                 password: crypto.randomBytes(32).toString('hex')
             });
             await user.save();
@@ -873,6 +878,7 @@ const googleSignIn = async (req, res) => {
             if (!user.googleId) {
                 user.googleId = googleId;
                 user.isVerified = true;
+                user.authProvider = 'firebase';
                 if (!user.profilePicture) user.profilePicture = picture;
                 await user.save();
             }
@@ -906,6 +912,7 @@ const googleSignIn = async (req, res) => {
             role: user.role,
             isVerified: user.isVerified,
             googleId: user.googleId,
+            authProvider: user.authProvider,
             profilePicture: user.profilePicture,
             // ...
             isNewUser: user.isNewUser,
