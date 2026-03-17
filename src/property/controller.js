@@ -3129,7 +3129,10 @@ const predictRent = async (req, res) => {
         res.status(200).json(prediction);
     } catch (error) {
         console.error('Predict Rent Controller Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to predict rent' });
+        res.status(500).json({ 
+            success: false, 
+            message: error.response?.data?.error || error.message || 'Failed to predict rent' 
+        });
     }
 };
 
