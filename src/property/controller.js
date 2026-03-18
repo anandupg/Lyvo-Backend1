@@ -1901,6 +1901,13 @@ const finalizeCheckIn = async (req, res) => {
         booking.actualCheckInDate = new Date();
         await booking.save();
 
+        // Load the latest room data (fallback to booking snapshot if needed)
+        const room = await Room.findById(booking.roomId).lean();
+        if (!room && !booking.roomSnapshot) {
+            return res.status(404).json({ success: false, message: 'Room not found for booking' });
+        }
+        const roomData = room || booking.roomSnapshot;
+
         // 2. Create Tenant Record or Update Existing
         // Check for existing active tenant to prevent duplicates
         let tenant = await Tenant.findOne({
@@ -1920,17 +1927,17 @@ const finalizeCheckIn = async (req, res) => {
             // If it's a re-booking, the previous one should be completed.
             // If we find an active one, it's a data anomaly or a double-click.
             tenant.bookingId = booking._id; // Link new booking
-            tenant.paymentId = booking.payment.razorpayPaymentId;
+            tenant.paymentId = booking.payment?.razorpayPaymentId;
             tenant.actualCheckInDate = new Date(); // Update check-in date
             // Update snapshot data just in case
             tenant.userName = booking.userSnapshot.name;
             tenant.userPhone = booking.userSnapshot.phone;
         } else {
-            const roomPerPersonRent = room.perPersonRent || Math.ceil((room.rent || 0) / (room.occupancy || 1));
-            const tenantMonthlyRent = roomPerPersonRent > 0 ? roomPerPersonRent : booking.payment.monthlyRent;
+            const roomPerPersonRent = roomData.perPersonRent || Math.ceil((roomData.rent || 0) / (roomData.occupancy || 1));
+            const tenantMonthlyRent = roomPerPersonRent > 0 ? roomPerPersonRent : booking.payment?.monthlyRent;
 
             // Ensure booking record is consistent (fix stale monthlyRent if needed)
-            if (booking.payment && booking.payment.monthlyRent !== tenantMonthlyRent) {
+            if (booking.payment && tenantMonthlyRent != null && booking.payment.monthlyRent !== tenantMonthlyRent) {
                 booking.payment.monthlyRent = tenantMonthlyRent;
                 await booking.save();
             }
@@ -1950,12 +1957,12 @@ const finalizeCheckIn = async (req, res) => {
                 ownerEmail: booking.ownerSnapshot.email,
                 ownerPhone: booking.ownerSnapshot.phone,
                 bookingId: booking._id,
-                paymentId: booking.payment.razorpayPaymentId,
-                amountPaid: booking.payment.totalAmount,
+                paymentId: booking.payment?.razorpayPaymentId,
+                amountPaid: booking.payment?.totalAmount,
                 checkInDate: booking.checkInDate || new Date(),
                 actualCheckInDate: new Date(),
                 monthlyRent: tenantMonthlyRent,
-                securityDeposit: booking.payment.securityDeposit,
+                securityDeposit: booking.payment?.securityDeposit,
                 status: 'active'
             });
         }
