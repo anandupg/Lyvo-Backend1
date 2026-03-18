@@ -1,10 +1,32 @@
 const MaintenanceRequest = require('./model');
 const Notification = require('../property/models/Notification');
 const Tenant = require('../property/models/Tenant');
+const axios = require('axios');
+
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
+
+async function getPredictedPriority(title, description, category) {
+    try {
+        const response = await axios.post(
+            `${ML_SERVICE_URL}/predict_priority`,
+            { title, description, category },
+            { timeout: 3000 }
+        );
+        if (response.data.success) {
+            return { priority: response.data.priority, confidence: response.data.confidence };
+        }
+    } catch (_) {
+        // ML service unavailable — silently fall back
+    }
+    return null;
+}
 
 exports.createRequest = async (req, res) => {
     try {
-        const { title, category, priority, description, images } = req.body;
+        const { title, category, description, images } = req.body;
+        // If tenant explicitly sent a non-default priority, honour it (manual).
+        // If omitted or 'medium' (the default), run auto-classification.
+        const manualPriority = req.body.priority;
         const tenantId = req.user.id;
 
         // Find tenant details to get owner and property info
@@ -12,6 +34,18 @@ exports.createRequest = async (req, res) => {
         if (!tenant) {
             console.log('Maintenance Create: No active tenant found for userId:', tenantId);
             return res.status(404).json({ message: 'No active tenancy found. You must be an active tenant to submit requests.' });
+        }
+
+        // Determine priority and its source
+        let priority = manualPriority || 'medium';
+        let prioritySource = 'manual';
+
+        if (!manualPriority || manualPriority === 'medium') {
+            const prediction = await getPredictedPriority(title, description, category);
+            if (prediction) {
+                priority = prediction.priority;
+                prioritySource = 'auto';
+            }
         }
 
         const maintenanceRequest = new MaintenanceRequest({
@@ -22,6 +56,7 @@ exports.createRequest = async (req, res) => {
             title,
             category,
             priority,
+            prioritySource,
             description,
             images
         });
@@ -161,4 +196,15 @@ exports.updateRequestStatus = async (req, res) => {
         console.error('Error updating request:', error);
         res.status(500).json({ message: 'Server error' });
     }
+};
+
+// Proxy: frontend calls this to get an AI priority suggestion before submitting
+exports.suggestPriority = async (req, res) => {
+    const { title, description, category } = req.body;
+    const prediction = await getPredictedPriority(title || '', description || '', category || '');
+    if (prediction) {
+        return res.json({ success: true, priority: prediction.priority, confidence: prediction.confidence });
+    }
+    // ML service down — return neutral fallback so frontend can still work
+    res.json({ success: false, priority: 'medium', confidence: 0 });
 };

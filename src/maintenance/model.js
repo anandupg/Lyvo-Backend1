@@ -52,6 +52,11 @@ const maintenanceRequestSchema = new mongoose.Schema({
     },
     resolvedAt: {
         type: Date
+    },
+    prioritySource: {
+        type: String,
+        enum: ['manual', 'auto'],
+        default: 'manual'
     }
 }, { timestamps: true });
 

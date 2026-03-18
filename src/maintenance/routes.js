@@ -5,6 +5,7 @@ const { authMiddleware } = require('../middleware/auth');
 
 router.use(authMiddleware);
 
+router.post('/suggest-priority', maintenanceController.suggestPriority);
 router.post('/', maintenanceController.createRequest);
 router.get('/tenant', maintenanceController.getTenantRequests);
 router.get('/owner', maintenanceController.getOwnerRequests);
