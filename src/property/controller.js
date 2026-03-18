@@ -1926,6 +1926,15 @@ const finalizeCheckIn = async (req, res) => {
             tenant.userName = booking.userSnapshot.name;
             tenant.userPhone = booking.userSnapshot.phone;
         } else {
+            const roomPerPersonRent = room.perPersonRent || Math.ceil((room.rent || 0) / (room.occupancy || 1));
+            const tenantMonthlyRent = roomPerPersonRent > 0 ? roomPerPersonRent : booking.payment.monthlyRent;
+
+            // Ensure booking record is consistent (fix stale monthlyRent if needed)
+            if (booking.payment && booking.payment.monthlyRent !== tenantMonthlyRent) {
+                booking.payment.monthlyRent = tenantMonthlyRent;
+                await booking.save();
+            }
+
             tenant = new Tenant({
                 userId: booking.userId,
                 userName: booking.userSnapshot.name,
@@ -1945,7 +1954,7 @@ const finalizeCheckIn = async (req, res) => {
                 amountPaid: booking.payment.totalAmount,
                 checkInDate: booking.checkInDate || new Date(),
                 actualCheckInDate: new Date(),
-                monthlyRent: booking.payment.monthlyRent,
+                monthlyRent: tenantMonthlyRent,
                 securityDeposit: booking.payment.securityDeposit,
                 status: 'active'
             });
@@ -2220,10 +2229,36 @@ const getTenantStatus = async (req, res) => {
             tenantData.room = tenantData.roomId;
             tenantData.owner = tenantData.ownerId;
 
+            // Ensure monthlyRent reflects per-person rent (avoids stale values like ₹559)
+            const perPersonRent = tenantData.room?.perPersonRent || Math.ceil((tenantData.room?.rent || 0) / (tenantData.room?.occupancy || 1));
+            if (perPersonRent > 0) {
+                tenantData.monthlyRent = perPersonRent;
+            }
+
             // Fallback for Security Deposit if not explicitly set on tenant
             if (!tenantData.securityDeposit && tenantData.propertyId?.security_deposit) {
                 tenantData.securityDeposit = tenantData.propertyId.security_deposit;
             }
+
+            // Fetch last rent payment to calculate next due date
+            const lastRentPayment = await RentPayment.findOne({
+                tenantId: activeTenant._id,
+                status: 'paid',
+                type: 'rent'
+            }).sort({ paidAt: -1 });
+
+            if (lastRentPayment) {
+                tenantData.lastRentPaidAt = lastRentPayment.paidAt;
+                tenantData.lastRentAmount = lastRentPayment.amount;
+            }
+
+            // Calculate total paid across all recorded rent payments (includes rent + other paid ledger items)
+            const paidPayments = await RentPayment.find({
+                tenantId: activeTenant._id,
+                status: 'paid'
+            });
+
+            tenantData.amountPaid = paidPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
         }
 
         res.json({
@@ -3037,6 +3072,15 @@ const getTenantPayments = async (req, res) => {
         // Calculate metadata similarly
         const enrichedPayments = payments.map(p => {
             const pObj = p.toObject();
+
+            // Ensure rent payments display the current per-person rent (prevents stale values)
+            if (p.type === 'rent' && p.roomId) {
+                const ppRent = p.roomId.perPersonRent || Math.ceil((p.roomId.rent || 0) / (p.roomId.occupancy || 1));
+                if (ppRent > 0) {
+                    pObj.amount = ppRent;
+                }
+            }
+
             if (p.status !== 'paid' && p.dueDate < new Date()) {
                 const diffTime = Math.abs(new Date() - p.dueDate);
                 pObj.daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
