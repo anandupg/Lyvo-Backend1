@@ -186,14 +186,30 @@ class CompatibilityEngine {
 
         // AI Generation for notes if API key available
         let notes = "Residents have different routines; communication is advised.";
+        let geminiNotesOk = false;
         if (!options.skipAI && this.genAI) {
             try {
                 notes = await this.generateAINotes(seeker, tenants, overallScore, lifestyleType);
+                geminiNotesOk = Boolean(notes && String(notes).trim());
             } catch (e) {
-                console.error("AI Generation failed:", e);
+                console.error("[CompatibilityEngine] AI Generation failed:", e.message || e);
             }
-        } else if (overallScore >= 80) {
+        } else if (!options.skipAI && !this.genAI) {
+            if (process.env.NODE_ENV !== "production") {
+                console.warn(
+                    "[CompatibilityEngine] GEMINI_API_KEY is not set — Gemini notes skipped. Set GEMINI_API_KEY in Lyvo-Backend/.env and restart the server (this is separate from VITE_GEMINI_API_KEY on the frontend)."
+                );
+            }
+        }
+        if (!geminiNotesOk && overallScore >= 80) {
             notes = "Great match! Your lifestyles and habits align very well with the current residents.";
+        }
+
+        if (process.env.NODE_ENV !== "production") {
+            const source = geminiNotesOk ? "gemini" : overallScore >= 80 ? "template-high-match" : "template-default";
+            console.log(
+                `[CompatibilityEngine] notes=${source} overallScore=${overallScore}% skipAI=${Boolean(options.skipAI)} tenants=${tenants.length}`
+            );
         }
 
         // Deterministic Breakdown
@@ -210,7 +226,8 @@ class CompatibilityEngine {
     }
 
     async generateAINotes(seeker, tenants, score, type) {
-        const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const modelId = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+        const model = this.genAI.getGenerativeModel({ model: modelId });
 
         const prompt = `
       As a compatibility expert for a roommate matching platform, summarize why this seeker is a ${score}% match with this room (${type}).

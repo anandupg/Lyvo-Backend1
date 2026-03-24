@@ -1061,7 +1061,7 @@ const getApprovedPropertyPublic = async (req, res) => {
                             }
                         });
 
-                        const compData = await CompatibilityEngine.evaluateRoom(seekerProfile, uniqueTenants);
+                        const compData = await CompatibilityEngine.evaluateRoom(seekerProfile, uniqueTenants, { skipAI: true });
                         return { ...room, compatibility: compData };
                     }));
                 }
@@ -1134,7 +1134,7 @@ const getApprovedPropertyPublic = async (req, res) => {
                         for (const t of formattedPropertyTenants) {
                             // Create a temp tenant object with just required fields for the engine if needed, 
                             // but formattedPropertyTenants structure matches what evaluateRoom expects (array of objects with lifestyle).
-                            const singleMatch = await CompatibilityEngine.evaluateRoom(seekerProfile, [t]);
+                            const singleMatch = await CompatibilityEngine.evaluateRoom(seekerProfile, [t], { skipAI: true });
                             t.matchScore = singleMatch.overallScore;
                         }
                     }
@@ -1303,22 +1303,23 @@ const getRoomPublic = async (req, res) => {
                 isDeleted: { $ne: true }
             }).populate('userId');
 
-            // Format tenants with presence check
-            formattedTenants = [];
-            for (const t of tenants) {
-                if (!t.userId) continue;
-
-                const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
-                formattedTenants.push({
-                    userId: t.userId._id,
-                    name: t.userName || t.userId.name,
-                    gender: t.userId.gender,
-                    age: t.userId.age,
-                    lifestyle: tAnswers ? tAnswers.answers : {},
-                    profilePicture: t.userId.profilePicture,
-                    joinedAt: t.userId.createdAt
-                });
-            }
+            // Format tenants (parallel behaviour lookups — avoids piling latency before Gemini)
+            formattedTenants = await Promise.all(
+                tenants
+                    .filter((t) => t.userId)
+                    .map(async (t) => {
+                        const tAnswers = await BehaviourAnswers.findOne({ userId: t.userId._id });
+                        return {
+                            userId: t.userId._id,
+                            name: t.userName || t.userId.name,
+                            gender: t.userId.gender,
+                            age: t.userId.age,
+                            lifestyle: tAnswers ? tAnswers.answers : {},
+                            profilePicture: t.userId.profilePicture,
+                            joinedAt: t.userId.createdAt
+                        };
+                    })
+            );
 
             // Deduplicate tenants by userId string to prevent multiple active records for same person
             const seenIds = new Set();
@@ -1341,14 +1342,18 @@ const getRoomPublic = async (req, res) => {
                         lifestyle: seekerAnswers.answers
                     };
 
-                    // Overall Score
+                    // Overall Score (one Gemini call for notes)
                     compatibilityData = await CompatibilityEngine.evaluateRoom(seekerProfile, formattedTenants);
 
-                    // Individual Scores
-                    for (const t of formattedTenants) {
-                        const singleMatch = await CompatibilityEngine.evaluateRoom(seekerProfile, [t]);
-                        t.matchScore = singleMatch.overallScore;
-                    }
+                    // Individual scores — skipAI, safe to run in parallel
+                    const perTenantMatches = await Promise.all(
+                        formattedTenants.map((t) =>
+                            CompatibilityEngine.evaluateRoom(seekerProfile, [t], { skipAI: true })
+                        )
+                    );
+                    formattedTenants.forEach((t, i) => {
+                        t.matchScore = perTenantMatches[i].overallScore;
+                    });
                 }
             }
         } catch (err) {
