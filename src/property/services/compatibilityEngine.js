@@ -24,7 +24,7 @@ class CompatibilityEngine {
         };
     }
 
-    /**
+    /** 
      * Normalize an answer string to it's numeric value
      */
     normalize(attr, value) {

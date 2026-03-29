@@ -2879,9 +2879,13 @@ const updateProperty = async (req, res) => {
 // Get all bookings for admin/debug (added manually)
 const getAllBookingsAdmin = async (req, res) => {
     try {
+        const rawLimit = parseInt(req.query.limit, 10);
+        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 10000) : 5000;
+
         const bookings = await Booking.find({ isDeleted: false })
             .sort({ bookedAt: -1 })
-            .limit(100);
+            .limit(limit)
+            .lean();
 
         res.json({
             success: true,
